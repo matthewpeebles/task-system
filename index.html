@@ -1,0 +1,2093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task System</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--bg2:#f5f5f3;--bg3:#eeede8;
+  --text:#1a1a18;--text2:#6b6a65;--text3:#9c9a92;
+  --border:#e0ded6;--border2:#cccac0;
+  --blue-bg:#e6f1fb;--blue-text:#0c447c;--blue-border:#b5d4f4;
+  --teal-bg:#e1f5ee;--teal-text:#085041;--teal-border:#9fe1cb;
+  --amber-bg:#faeeda;--amber-text:#854f0b;--amber-border:#fac775;
+  --red-bg:#fcebeb;--red-text:#791f1f;--red-border:#f7c1c1;
+  --gray-bg:#f1efe8;--gray-text:#444441;
+  --radius:8px;--radius-lg:12px;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1e1e1c;--bg2:#2a2a28;--bg3:#323230;
+  --text:#e8e6de;--text2:#9c9a92;--text3:#6b6a65;
+  --border:#3a3a38;--border2:#4a4a48;
+  --blue-bg:#042c53;--blue-text:#85b7eb;--blue-border:#185fa5;
+  --teal-bg:#04342c;--teal-text:#5dcaa5;--teal-border:#0f6e56;
+  --amber-bg:#412402;--amber-text:#ef9f27;--amber-border:#854f0b;
+  --red-bg:#501313;--red-text:#f09595;--red-border:#a32d2d;
+  --gray-bg:#2c2c2a;--gray-text:#b4b2a9;
+}}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text);background:var(--bg3);line-height:1.5;height:100vh;overflow:hidden}
+button{font-family:inherit;font-size:13px;cursor:pointer;border-radius:var(--radius);border:0.5px solid var(--border2);background:transparent;color:var(--text);padding:5px 12px;transition:all 0.15s}
+button:hover{background:var(--bg2)}
+button:active{transform:scale(0.98)}
+button:disabled{opacity:0.45;cursor:not-allowed}
+button.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+button.primary:hover{opacity:0.85}
+button.ghost{border-color:transparent;padding:3px 7px}
+button.ghost:hover{background:var(--bg2)}
+button.danger-btn{color:var(--red-text)}
+input,select,textarea{font-family:inherit;font-size:13px;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);padding:7px 10px;width:100%;outline:none;transition:border-color 0.15s}
+input:focus,select:focus,textarea:focus{border-color:var(--text3)}
+textarea{resize:vertical;min-height:64px}
+.app{max-width:660px;margin:0 auto;padding:16px 16px 0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.header{display:flex;align-items:center;justify-content:space-between;padding:4px 0 14px;border-bottom:0.5px solid var(--border);margin-bottom:16px}
+.header h1{font-size:16px;font-weight:500}
+.mode-tabs{display:flex;gap:3px;background:var(--bg2);padding:3px;border-radius:var(--radius);border:0.5px solid var(--border)}
+.mode-tab{font-size:12px;font-weight:500;padding:4px 14px;border-radius:6px;border:none;background:transparent;color:var(--text2);cursor:pointer;transition:all 0.15s}
+.mode-tab.active{background:var(--bg);color:var(--text);border:0.5px solid var(--border)}
+.domain-tabs{display:flex;gap:6px;margin-bottom:14px}
+.domain-tab{font-size:12px;padding:4px 14px;border-radius:99px;border:0.5px solid var(--border2);color:var(--text2);cursor:pointer;background:transparent;transition:all 0.15s}
+.domain-tab:hover{background:var(--bg2)}
+.domain-tab.work{background:var(--blue-bg);color:var(--blue-text);border-color:var(--blue-border)}
+.domain-tab.personal{background:var(--teal-bg);color:var(--teal-text);border-color:var(--teal-border)}
+.stats-row{display:flex;gap:8px;margin-bottom:14px}
+.stat{flex:1;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;text-align:center;transition:all 0.15s}
+.stat:hover{border-color:var(--border2);background:var(--bg3)}
+.stat-active{background:var(--bg);border-color:var(--border2);box-shadow:0 0 0 1px var(--border2)}
+.stat-num{font-size:20px;font-weight:500;line-height:1}
+.stat-label{font-size:11px;color:var(--text2);margin-top:3px}
+.section-label{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px}
+.task-tree{display:flex;flex-direction:column;gap:4px;overflow-y:auto;flex:1;padding-bottom:16px}
+.task-row{display:flex;align-items:flex-start;gap:6px;padding:9px 10px;border-radius:var(--radius);border:0.5px solid var(--border);background:var(--bg2);transition:border-color 0.15s}
+.task-row:hover{border-color:var(--border2)}
+.task-row.top{border-color:var(--border2)}
+.task-row.drag-source{opacity:0.35;border-color:var(--blue-border)}
+.drag-handle{cursor:grab;color:var(--text3);font-size:12px;padding:2px 3px;flex-shrink:0;margin-top:2px;line-height:1;user-select:none}
+.drag-handle:hover{color:var(--text2)}
+.drag-handle:active{cursor:grabbing}
+#drag-ghost{position:fixed;pointer-events:none;z-index:9999;background:var(--bg);border:1px solid var(--blue-border);border-radius:var(--radius);padding:7px 12px;font-size:13px;font-weight:500;color:var(--blue-text);box-shadow:0 4px 16px rgba(0,0,0,0.18);max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#drag-line{position:fixed;pointer-events:none;z-index:9998;height:2px;background:var(--blue-text);border-radius:2px;display:none}
+.expand-btn{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text3);font-size:10px;margin-top:2px;cursor:pointer;border:none;background:transparent;border-radius:3px}
+.expand-btn:hover{background:var(--bg3);color:var(--text)}
+.task-main{flex:1;min-width:0}
+.task-title{font-size:13px;font-weight:500;word-break:break-word;margin-bottom:4px}
+.task-meta{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.badge{font-size:10px;font-weight:500;padding:1px 7px;border-radius:99px;white-space:nowrap}
+.b-actionable{background:var(--teal-bg);color:var(--teal-text)}
+.b-waiting{background:var(--amber-bg);color:var(--amber-text)}
+.b-notactionable{background:var(--red-bg);color:var(--red-text)}
+.b-neutral{background:var(--bg3);color:var(--text2);border:0.5px solid var(--border)}
+.b-overdue{background:var(--red-bg);color:var(--red-text)}
+.task-notes{font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5}
+.task-actions{display:flex;gap:2px;flex-shrink:0;align-items:flex-start}
+.rank-arrows{display:flex;flex-direction:column;gap:1px}
+.rank-arrow{width:16px;height:14px;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--text3);border-radius:3px;cursor:pointer;border:none;background:transparent;padding:0}
+.rank-arrow:hover{background:var(--bg3);color:var(--text)}
+.tree-children{padding-left:20px;margin-top:4px;display:flex;flex-direction:column;gap:4px;border-left:0.5px solid var(--border);margin-left:8px}
+.add-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);border:0.5px solid var(--border2);color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;width:auto;background:var(--bg2);margin-top:0;transition:all 0.15s}
+.add-btn:hover{filter:brightness(0.93)}
+.empty{text-align:center;padding:40px 20px;color:var(--text2);font-size:13px;line-height:1.8}
+.overdue-banner{background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--amber-text);line-height:1.6}
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal{background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius-lg);padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:15px;font-weight:500;margin-bottom:16px}
+.form-label{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px}
+.form-row{margin-bottom:11px}
+.form-inline{display:flex;gap:8px;margin-bottom:11px}
+.form-inline>*{flex:1;min-width:0}
+.btn-row{display:flex;gap:6px;justify-content:flex-end;margin-top:14px}
+.dedup{background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--amber-text);line-height:1.65}
+/* Operation mode */
+.op-setup{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:18px;max-width:360px;margin:8px auto 0}
+.op-setup h3{font-size:13px;font-weight:500;margin-bottom:14px;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em}
+.domain-select{display:flex;gap:6px;margin-bottom:12px}
+.domain-select button{flex:1;padding:7px}
+.op-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:8px;cursor:pointer;transition:all 0.15s}
+.op-card:hover{border-color:var(--border2)}
+.op-card.chosen-work{border-color:var(--blue-border);background:var(--blue-bg)}
+.op-card.chosen-personal{border-color:var(--teal-border);background:var(--teal-bg)}
+.op-card-inner{display:flex;gap:10px}
+.op-num{font-size:22px;font-weight:500;color:var(--text3);line-height:1;width:24px;flex-shrink:0;text-align:center}
+.op-body{flex:1;min-width:0}
+.op-title{font-size:14px;font-weight:500;margin-bottom:5px}
+.op-badges{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:5px}
+.op-why{font-size:12px;color:var(--text2);line-height:1.55;padding-top:6px;border-top:0.5px solid var(--border)}
+.loading{text-align:center;padding:36px;color:var(--text2);font-size:13px}
+.dot{display:inline-block;animation:blink 1.2s infinite}
+.dot:nth-child(2){animation-delay:.2s}
+.dot:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+.chosen-box{margin-top:12px;padding:12px 14px;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);font-size:13px;color:var(--teal-text);line-height:1.6}
+.op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ── Utilities ──────────────────────────────────────────────────────────────
+function genId(){return Math.random().toString(36).slice(2,9)}
+function today(){return new Date().toISOString().slice(0,10)}
+function isOverdue(d){return d&&new Date(d)<new Date(today())}
+
+function flattenTasks(tasks,out=[]){
+  for(const t of tasks){out.push(t);if(t.children?.length)flattenTasks(t.children,out)}
+  return out;
+}
+function findTask(tasks,id){
+  for(const t of tasks){if(t.id===id)return t;if(t.children){const f=findTask(t.children,id);if(f)return f;}}
+  return null;
+}
+function removeTask(tasks,id){
+  return tasks.filter(t=>t.id!==id).map(t=>({...t,children:t.children?removeTask(t.children,id):[]}));
+}
+function updateTask(tasks,id,up){
+  return tasks.map(t=>{
+    if(t.id===id)return{...t,...up};
+    if(t.children?.length)return{...t,children:updateTask(t.children,id,up)};
+    return t;
+  });
+}
+function addChild(tasks,pid,child){
+  return tasks.map(t=>{
+    if(t.id===pid)return{...t,children:[...(t.children||[]),child]};
+    if(t.children?.length)return{...t,children:addChild(t.children,pid,child)};
+    return t;
+  });
+}
+function getTaskDepth(tasks,id,depth=0){
+  for(const t of tasks){
+    if(t.id===id)return depth;
+    if(t.children?.length){const d=getTaskDepth(t.children,id,depth+1);if(d!==-1)return d;}
+  }
+  return -1;
+}
+
+function getTopAncestor(topTasks,id){
+  for(const t of topTasks){
+    if(t.id===id)return t;
+    if(findTask(t.children||[],id))return t;
+  }
+  return null;
+}
+
+const STATE_LABELS={'actionable':'Actionable','waiting':'Waiting','not-actionable':'Not actionable'};
+const STATE_BADGE={'actionable':'b-actionable','waiting':'b-waiting','not-actionable':'b-notactionable'};
+const DURATIONS=['< 5 min','5–15 min','15–30 min','30–60 min','1–2 hrs','2–4 hrs','Half day','Full day'];
+
+function durationToMins(d){
+  if(!d)return null;
+  if(d.includes('< 5'))return 3;
+  if(d.includes('5–15'))return 10;
+  if(d.includes('15–30'))return 25;
+  if(d.includes('30–60'))return 45;
+  if(d.includes('1–2'))return 90;
+  if(d.includes('2–4'))return 180;
+  if(d.includes('Half'))return 240;
+  if(d.includes('Full'))return 480;
+  return null;
+}
+function availToMins(a){
+  if(!a)return null;
+  if(a==='15 min')return 15;
+  if(a==='30 min')return 30;
+  if(a==='1 hr')return 60;
+  if(a==='2 hrs')return 120;
+  if(a==='Half day')return 240;
+  if(a==='All day')return 480;
+  return null;
+}
+
+// ── Storage ────────────────────────────────────────────────────────────────
+const STORAGE_KEY='taskSystem_v1';
+const ARCHIVE_KEY='taskSystem_archive_v1';
+const SETTINGS_KEY='taskSystem_settings_v1';
+const GDRIVE_CLIENT_KEY='taskSystem_gdriveClientId';
+const GDRIVE_TOKEN_KEY='taskSystem_gdriveToken';
+const GDRIVE_FILE_KEY='taskSystem_gdriveFileId';
+const GDRIVE_FILENAME='task-system-data.json';
+const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.appdata';
+
+// Google Drive sync state (not in main state — managed separately)
+let gdrive={
+  clientId:localStorage.getItem(GDRIVE_CLIENT_KEY)||'',
+  token:null,
+  fileId:localStorage.getItem(GDRIVE_FILE_KEY)||'',
+  status:'disconnected', // 'disconnected'|'connecting'|'connected'|'syncing'|'error'
+  error:'',
+  lastSync:null,
+};
+
+function gdriveRender(){
+  // Trigger a settings re-render if settings tab is active
+  if(state.mode==='settings')render();
+}
+function loadTasks(){try{const s=localStorage.getItem(STORAGE_KEY);return s?JSON.parse(s):[];}catch(e){return[];}}
+function saveTasks(tasks){
+  try{
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));
+    localStorage.setItem('taskSystem_lastSaved',Date.now().toString());
+  }catch(e){}
+  gdriveScheduleWrite();
+}
+function loadArchive(){try{const s=localStorage.getItem(ARCHIVE_KEY);return s?JSON.parse(s):[];}catch(e){return[];}}
+function saveArchive(archive){
+  try{localStorage.setItem(ARCHIVE_KEY,JSON.stringify(archive));}catch(e){}
+  gdriveScheduleWrite();
+}
+const DEFAULT_SETTINGS={
+  workDays:['Mon','Tue','Wed','Thu','Fri'],
+  workStart:'05:00',
+  workEnd:'14:00',
+  workTimezone:'America/Los_Angeles',
+  defaultAvail:'30 min',
+  crossDomainBleed:true,
+  crossDomainDaysUntilDue:0,
+  crossDomainMinPriorityPct:100,
+  crossDomainIncludeWaiting:false,
+  crossDomainDurationCap:'',
+  crossDomainMultiplier:0.5,
+  showClosedSubtasksDefault:true,
+};
+function loadSettings(){
+  try{const s=localStorage.getItem(SETTINGS_KEY);return s?{...DEFAULT_SETTINGS,...JSON.parse(s)}:DEFAULT_SETTINGS;}
+  catch(e){return DEFAULT_SETTINGS;}
+}
+function saveSettings(settings){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){}}
+
+// ── Google Drive sync ──────────────────────────────────────────────────────
+async function gdriveAuth(){
+  if(!gdrive.clientId){gdrive.error='No client ID set.';gdriveRender();return;}
+  gdrive.status='connecting';gdrive.error='';gdriveRender();
+  return new Promise((resolve,reject)=>{
+    const params=new URLSearchParams({
+      client_id:gdrive.clientId,
+      redirect_uri:window.location.href.split('?')[0].split('#')[0],
+      response_type:'token',
+      scope:GDRIVE_SCOPE,
+      prompt:'consent',
+    });
+    const url='https://accounts.google.com/o/oauth2/v2/auth?'+params;
+    const w=window.open(url,'gdrive-auth','width=500,height=600,left=200,top=100');
+    const check=setInterval(()=>{
+      try{
+        const hash=w.location.hash;
+        if(hash&&hash.includes('access_token')){
+          clearInterval(check);w.close();
+          const p=new URLSearchParams(hash.slice(1));
+          const token=p.get('access_token');
+          const expiresIn=parseInt(p.get('expires_in')||'3600',10);
+          gdrive.token=token;
+          gdrive.status='connected';
+          // Schedule token expiry
+          setTimeout(()=>{gdrive.token=null;gdrive.status='disconnected';gdriveRender();},expiresIn*1000);
+          gdriveRender();
+          resolve(token);
+        }
+      }catch(e){}
+      if(!w||w.closed){
+        clearInterval(check);
+        if(!gdrive.token){gdrive.status='disconnected';gdrive.error='Sign-in cancelled.';gdriveRender();}
+        reject();
+      }
+    },300);
+  });
+}
+
+async function gdriveEnsureToken(){
+  if(gdrive.token)return gdrive.token;
+  return await gdriveAuth();
+}
+
+async function gdriveFindOrCreateFile(){
+  const token=await gdriveEnsureToken();
+  // Search for existing file in appDataFolder
+  const search=await fetch(
+    `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='${GDRIVE_FILENAME}'&fields=files(id,name,modifiedTime)`,
+    {headers:{Authorization:'Bearer '+token}}
+  );
+  const result=await search.json();
+  if(result.files&&result.files.length>0){
+    const fileId=result.files[0].id;
+    gdrive.fileId=fileId;
+    localStorage.setItem(GDRIVE_FILE_KEY,fileId);
+    return fileId;
+  }
+  // Create new file
+  const meta={name:GDRIVE_FILENAME,parents:['appDataFolder']};
+  const form=new FormData();
+  form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+  form.append('file',new Blob([JSON.stringify({tasks:[],archive:[],savedAt:new Date().toISOString()})],{type:'application/json'}));
+  const create=await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+    {method:'POST',headers:{Authorization:'Bearer '+token},body:form}
+  );
+  const created=await create.json();
+  gdrive.fileId=created.id;
+  localStorage.setItem(GDRIVE_FILE_KEY,created.id);
+  return created.id;
+}
+
+async function gdriveRead(){
+  try{
+    const token=await gdriveEnsureToken();
+    const fileId=gdrive.fileId||await gdriveFindOrCreateFile();
+    const res=await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      {headers:{Authorization:'Bearer '+token}}
+    );
+    if(!res.ok)throw new Error('Read failed: '+res.status);
+    return await res.json();
+  }catch(e){
+    gdrive.error='Read error: '+e.message;gdrive.status='error';gdriveRender();
+    return null;
+  }
+}
+
+async function gdriveWrite(data){
+  try{
+    const token=await gdriveEnsureToken();
+    const fileId=gdrive.fileId||await gdriveFindOrCreateFile();
+    gdrive.status='syncing';gdriveRender();
+    await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+      {method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+       body:JSON.stringify({...data,savedAt:new Date().toISOString()})}
+    );
+    gdrive.status='connected';gdrive.lastSync=new Date();gdrive.error='';
+    gdriveRender();
+  }catch(e){
+    gdrive.error='Write error: '+e.message;gdrive.status='error';gdriveRender();
+  }
+}
+
+// Debounced Drive write — batches rapid changes into one write
+let _driveWriteTimer=null;
+function gdriveScheduleWrite(){
+  if(!gdrive.token)return;
+  clearTimeout(_driveWriteTimer);
+  _driveWriteTimer=setTimeout(()=>{
+    gdriveWrite({tasks:state.tasks,archive:state.archive});
+  },2000);
+}
+
+async function gdriveConnect(){
+  try{
+    await gdriveAuth();
+    const fileId=await gdriveFindOrCreateFile();
+    // Read existing data from Drive and merge (Drive wins if it has more recent data)
+    const data=await gdriveRead();
+    if(data&&data.tasks){
+      const localSaved=parseInt(localStorage.getItem('taskSystem_lastSaved')||'0',10);
+      const driveSaved=data.savedAt?new Date(data.savedAt).getTime():0;
+      if(driveSaved>localSaved){
+        // Drive is newer — load from Drive
+        saveTasks(data.tasks);
+        saveArchive(data.archive||[]);
+        state.tasks=data.tasks;
+        state.archive=data.archive||[];
+        state.tasks.forEach(t=>expandedSet.add(t.id));
+        setState({tasks:state.tasks,archive:state.archive});
+      } else {
+        // Local is newer — push to Drive
+        await gdriveWrite({tasks:state.tasks,archive:state.archive});
+      }
+    }
+    gdrive.status='connected';gdrive.error='';
+    gdriveRender();
+  }catch(e){
+    gdrive.status='disconnected';
+  }
+}
+
+function gdriveDisconnect(){
+  gdrive.token=null;gdrive.status='disconnected';gdrive.fileId='';gdrive.error='';gdrive.lastSync=null;
+  localStorage.removeItem(GDRIVE_FILE_KEY);
+  gdriveRender();
+}
+
+// ── Scoring ────────────────────────────────────────────────────────────────
+function scoreTask(task,topTasks,availMins){
+  const top=getTopAncestor(topTasks,task.id)||task;
+  const rank=top.rank||99;
+  const rankScore=(100-Math.min(rank,100))*0.4;
+
+  let urgency=0;
+  const due=task.dueDate||top.dueDate;
+  if(due){
+    const diff=Math.floor((new Date(due)-new Date())/(86400000));
+    if(diff<=0)urgency=40;
+    else if(diff<=1)urgency=35;
+    else if(diff<=3)urgency=28;
+    else if(diff<=7)urgency=18;
+    else if(diff<=14)urgency=10;
+    else urgency=4;
+  }
+
+  let fitScore=availMins?0:8;
+  if(availMins&&task.duration){
+    fitScore=durationToMins(task.duration)<=availMins?15:0;
+  }
+
+  let waitBonus=0;
+  if(task.state==='waiting'&&isOverdue(task.dueDate||task.waitingBy))waitBonus=30;
+
+  return rankScore+urgency+fitScore+waitBonus;
+}
+
+function scoreTaskWithDomain(task,topTasks,availMins,activeDomain){
+  const base=scoreTask(task,topTasks,availMins);
+  if(task.domain===activeDomain)return base;
+  const multiplier=typeof state!=='undefined'?(state.settings.crossDomainMultiplier??0.5):0.5;
+  return base*multiplier;
+}
+
+// ── Dedup check (simple local) ─────────────────────────────────────────────
+function findSimilar(tasks,title){
+  const needle=title.toLowerCase().trim();
+  if(needle.length<4)return[];
+  const needleWords=needle.split(/\s+/).filter(w=>w.length>3);
+  const flat=flattenTasks(tasks);
+  return flat.filter(t=>{
+    const hay=t.title.toLowerCase();
+    const hayWords=hay.split(/\s+/).filter(w=>w.length>3);
+    // Match if: hay contains needle prefix, needle contains hay prefix,
+    // or they share a meaningful word
+    if(hay.includes(needle.slice(0,Math.min(10,needle.length))))return true;
+    if(needle.includes(hay.slice(0,Math.min(10,hay.length))))return true;
+    return needleWords.some(w=>hayWords.includes(w));
+  }).slice(0,4);
+}
+
+// ── AI Operation Mode ──────────────────────────────────────────────────────
+async function getAIRecommendations(candidates,topTasks,domain,avail){
+  const ranked=candidates.map((t,i)=>{
+    const s=scoreTask(t,topTasks,availToMins(avail));
+    const top=getTopAncestor(topTasks,t.id)||t;
+    const crossPenalty=t.domain!==domain?(state.settings.crossDomainMultiplier??0.5):1;
+    return{idx:i+1,id:t.id,title:t.title,domain:t.domain,state:t.state,duration:t.duration||'',due:t.dueDate||'',waitingWho:t.waitingWho||'',waitingBy:t.waitingBy||'',rank:top.rank||99,score:Math.round(s*crossPenalty)};
+  }).sort((a,b)=>b.score-a.score).slice(0,15);
+
+  const multiplier=state.settings.crossDomainMultiplier??0.5;
+  const prompt=`You are a task prioritization assistant. The user is in "${domain}" mode with "${avail||'unspecified time'}" available now. Cross-domain tasks have already been pre-scored with a ${multiplier.toFixed(1)}x penalty multiplier applied to their raw scores.
+
+Candidate tasks (pre-scored, higher score = more urgent/important):
+${ranked.map(t=>`${t.idx}. [score:${t.score}] "${t.title}" | ${t.domain} | ${t.state}${t.duration?' | '+t.duration:''}${t.due?' | due '+t.due:''}${t.waitingWho?' | waiting on '+t.waitingWho+(t.waitingBy?' by '+t.waitingBy:''):''} | priority rank #${t.rank}`).join('\n')}
+
+You MUST return exactly 5 tasks. If fewer than 5 candidates are available, return all of them. Never return fewer than the number of candidates provided. Select the best fit for the user's current context and rank them in order of recommendation.
+
+Return ONLY a valid JSON array with no other text, no markdown, no code fences:
+[{"idx":1,"why":"One sentence, max 20 words, explaining why this task right now.","crossDomain":false}]
+
+crossDomain should be true only if the task is from the opposite domain and is urgent enough to surface anyway.`;
+
+  const res=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,messages:[{role:'user',content:prompt}]})
+  });
+  const data=await res.json();
+  const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  const clean=text.replace(/```json|```/g,'').trim();
+  const parsed=JSON.parse(clean);
+  return parsed.map(r=>{
+    const src=ranked[r.idx-1]||ranked.find(x=>x.idx===r.idx);
+    if(!src)return null;
+    const task=candidates.find(t=>t.id===src.id);
+    return{task,why:r.why,crossDomain:r.crossDomain||false};
+  }).filter(Boolean);
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+let state={
+  tasks:loadTasks(),
+  archive:loadArchive(),
+  settings:loadSettings(),
+  mode:'org',           // 'org' | 'op' | 'archive' | 'settings'
+  activeDomain:'work',
+  showModal:false,
+  modalParentId:null,
+  editTask:null,
+  showMoveModal:false,
+  moveTaskId:null,
+  showClosedSubtasks:loadSettings().showClosedSubtasksDefault,
+  closeBlockedId:null,
+  closeBlockedCount:0,
+  confirmDeleteId:null,
+  filterState:null,
+  opDismissed:new Set(),
+  opDomain:'work',
+  opAvail:'',
+  opResults:null,
+  opLoading:false,
+  opChosen:null,
+};
+
+function setState(patch){
+  state={...state,...patch};
+  render();
+}
+
+// ── Task mutations ─────────────────────────────────────────────────────────
+function addTask(form,parentId,placeAfterVal){
+  const isTop=!parentId;
+  const rank=isTop?state.tasks.filter(t=>t.domain===form.domain).length+1:null;
+  const unifiedDate=form.dueDate||form.waitingBy||null;
+  const effectiveDuration=form.duration||(form.state==='waiting'?'< 5 min':null);
+  const t={id:genId(),title:form.title.trim(),domain:form.domain,state:form.state,
+    duration:effectiveDuration,dueDate:unifiedDate,
+    waitingWho:form.waitingWho||null,waitingBy:unifiedDate,
+    notes:form.notes||'',children:[],rank,createdAt:new Date().toISOString()};
+  let tasks;
+  if(parentId){
+    // Inherit domain from top-level ancestor
+    const topTask=getTopAncestor(state.tasks,parentId)||findTask(state.tasks,parentId);
+    if(topTask)t.domain=topTask.domain;
+    // Clamp new task due date to parent's if needed
+    const parentTask=findTask(state.tasks,parentId);
+    if(parentTask?.dueDate&&(!t.dueDate||t.dueDate>parentTask.dueDate)){
+      t.dueDate=parentTask.dueDate;
+    } else if(parentTask?.dueDate&&!t.dueDate){
+      t.dueDate=parentTask.dueDate;
+    }
+    // Assign rank = last among siblings
+    const parentTask2=findTask(state.tasks,parentId);
+    t.rank=(parentTask2?.children?.length||0)+1;
+    tasks=addChild(state.tasks,parentId,t);
+  } else {
+    tasks=[...state.tasks,t];
+  }
+  // Apply place-after ranking
+  if(placeAfterVal&&placeAfterVal!=='last'){
+    // Get siblings at this level after insertion
+    let siblings;
+    if(parentId){
+      const p=findTask(tasks,parentId);
+      siblings=(p?.children||[]).sort((a,b)=>(a.rank||99)-(b.rank||99));
+    } else {
+      siblings=tasks.filter(s=>s.domain===t.domain).sort((a,b)=>(a.rank||99)-(b.rank||99));
+    }
+    // Find target position
+    let insertAfterRank=0;
+    if(placeAfterVal==='first'){
+      insertAfterRank=0;
+    } else {
+      const afterTask=siblings.find(s=>s.id===placeAfterVal);
+      insertAfterRank=afterTask?afterTask.rank:siblings.length;
+    }
+    // Re-rank: shift everything after the insert point up by 1, put new task there
+    siblings.forEach(s=>{
+      if(s.id===t.id)return;
+      if(s.rank>insertAfterRank)tasks=updateTask(tasks,s.id,{rank:s.rank+1});
+    });
+    tasks=updateTask(tasks,t.id,{rank:insertAfterRank+1});
+  }
+  // Propagate due date down to children if any
+  if(t.dueDate)tasks=propagateDueDates(tasks,t.id,t.dueDate);
+  // Auto-create actionable child if task is not-actionable
+  if(form.state==='not-actionable'){
+    const siblingsAfterAdd=findTask(tasks,t.id)?.children||[];
+    const child={id:genId(),title:`Define: ${t.title}`,domain:t.domain,
+      state:'actionable',duration:'< 5 min',dueDate:t.dueDate||null,
+      waitingWho:null,waitingBy:null,notes:'',children:[],rank:siblingsAfterAdd.length+1,
+      createdAt:new Date().toISOString()};
+    tasks=addChild(tasks,t.id,child);
+    expandedSet.add(t.id);
+  }
+  state.tasks=tasks;
+  saveTasks(tasks);
+  setState({showModal:false,modalParentId:null,tasks});
+  scrollToTask(t.id);
+}
+
+function editTaskFn(id,form){
+  // Only lock domain if this task actually has a parent
+  const hasParent=findParent(state.tasks,id)!=null;
+  const effectiveDomain=hasParent?(getTopDomain(state.tasks,id)||form.domain):form.domain;
+  let tasks=updateTask(state.tasks,id,{
+    title:form.title.trim(),domain:effectiveDomain,state:form.state,
+    duration:form.duration||null,dueDate:form.dueDate||form.waitingBy||null,
+    waitingWho:form.waitingWho||null,waitingBy:form.dueDate||form.waitingBy||null,
+    notes:form.notes||'',
+  });
+  // Propagate updated due date down to children
+  if(form.dueDate)tasks=propagateDueDates(tasks,id,form.dueDate);
+  saveTasks(tasks);
+  setState({tasks,editTask:null});
+}
+
+function deleteTaskFn(id){
+  let tasks=removeTask(state.tasks,id);
+  // Re-rank each domain
+  ['work','personal'].forEach(d=>{
+    const tops=tasks.filter(t=>t.domain===d).sort((a,b)=>(a.rank||99)-(b.rank||99));
+    tops.forEach((t,i)=>{tasks=updateTask(tasks,t.id,{rank:i+1});});
+  });
+  saveTasks(tasks);
+  setState({tasks,confirmDeleteId:null});
+}
+
+// Returns true if task or any descendant is actionable or overdue-waiting
+function hasActionableDescendant(task){
+  // A task "has an active descendant" if it or any open descendant is actionable or waiting
+  if(task.closed)return false;
+  if(task.state==='actionable')return true;
+  if(task.state==='waiting')return true;
+  return(task.children||[]).some(c=>hasActionableDescendant(c));
+}
+function hasWaitingDescendant(task){
+  if(task.closed)return false;
+  if(task.state==='waiting')return true;
+  return(task.children||[]).some(c=>hasWaitingDescendant(c));
+}
+function needsDefinition(task){
+  // A task needs definition if: not closed, not actionable/waiting, and no open actionable/waiting descendant
+  if(task.closed)return false;
+  if(task.state==='actionable'||task.state==='waiting')return false;
+  return!hasActionableDescendant(task);
+}
+function hasNeedsDefinitionDescendant(task){
+  if(task.closed)return false;
+  if(needsDefinition(task))return true;
+  return(task.children||[]).some(c=>hasNeedsDefinitionDescendant(c));
+}
+
+// Find the parent of a given task id, searching recursively
+function findParent(tasks,id,parent=null){
+  for(const t of tasks){
+    if(t.id===id)return parent;
+    if(t.children?.length){const p=findParent(t.children,id,t);if(p!==undefined)return p;}
+  }
+  return undefined;
+}
+
+// Reopen all closed ancestors of a given task id
+function reopenAncestors(tasks,id){
+  const parent=findParent(tasks,id);
+  if(!parent)return tasks;
+  if(parent.closed){
+    tasks=updateTask(tasks,parent.id,{closed:false});
+  }
+  return reopenAncestors(tasks,parent.id);
+}
+
+// Count open (non-closed) subtasks recursively
+function countOpenSubtasks(task){
+  if(!task.children?.length)return 0;
+  return task.children.reduce((n,c)=>{
+    if(!c.closed)n++;
+    n+=countOpenSubtasks(c);
+    return n;
+  },0);
+}
+
+// Close a top-level task — blocked if open subtasks remain
+function closeTopLevelTask(id){
+  const task=state.tasks.find(t=>t.id===id);
+  if(!task)return;
+  const openCount=countOpenSubtasks(task);
+  if(openCount>0){
+    setState({closeBlockedId:id,closeBlockedCount:openCount});
+    return;
+  }
+  setState({closeBlockedId:null,closeBlockedCount:0});
+  // Move to archive
+  const archived={...task,closedAt:new Date().toISOString()};
+  const archive=[...state.archive,archived];
+  let tasks=state.tasks.filter(t=>t.id!==id);
+  // Re-rank remaining in this domain
+  const tops=tasks.filter(t=>t.domain===task.domain).sort((a,b)=>(a.rank||99)-(b.rank||99));
+  tops.forEach((t,i)=>{tasks=updateTask(tasks,t.id,{rank:i+1});});
+  saveTasks(tasks);
+  saveArchive(archive);
+  setState({tasks,archive});
+}
+
+// Toggle closed on a subtask (not top-level)
+function toggleSubtaskClosed(id){
+  const task=findTask(state.tasks,id);
+  if(!task)return;
+  if(!task.closed){
+    // Closing: check own open subtasks
+    const openCount=countOpenSubtasks(task);
+    if(openCount>0){
+      setState({closeBlockedId:id,closeBlockedCount:openCount});
+      return;
+    }
+    setState({closeBlockedId:null,closeBlockedCount:0});
+    const tasks=updateTask(state.tasks,id,{closed:true});
+    saveTasks(tasks);
+    setState({tasks});
+  } else {
+    // Re-opening: clear block banner, reopen this task and any closed ancestors
+    setState({closeBlockedId:null,closeBlockedCount:0});
+    let tasks=updateTask(state.tasks,id,{closed:false});
+    // Reopen any closed ancestors up the tree
+    tasks=reopenAncestors(tasks,id);
+    saveTasks(tasks);
+    setState({tasks});
+  }
+}
+
+function rerankFn(id,dir){
+  // Top-level: rerank among domain siblings
+  const task=state.tasks.find(t=>t.id===id);
+  if(task){
+    const domainTops=state.tasks.filter(t=>t.domain===task.domain).sort((a,b)=>a.rank-b.rank);
+    const idx=domainTops.findIndex(t=>t.id===id);
+    if(dir==='up'&&idx===0)return;
+    if(dir==='down'&&idx===domainTops.length-1)return;
+    const swap=domainTops[dir==='up'?idx-1:idx+1];
+    let tasks=updateTask(state.tasks,id,{rank:swap.rank});
+    tasks=updateTask(tasks,swap.id,{rank:task.rank});
+    saveTasks(tasks);setState({tasks});return;
+  }
+  // Child: find parent, rerank among parent's children
+  const parent=findParent(state.tasks,id);
+  if(!parent)return;
+  const siblings=[...(parent.children||[])].sort((a,b)=>(a.rank||99)-(b.rank||99));
+  const idx=siblings.findIndex(t=>t.id===id);
+  if(dir==='up'&&idx===0)return;
+  if(dir==='down'&&idx===siblings.length-1)return;
+  const swap=siblings[dir==='up'?idx-1:idx+1];
+  const child=siblings[idx];
+  let tasks=updateTask(state.tasks,id,{rank:swap.rank});
+  tasks=updateTask(tasks,swap.id,{rank:child.rank});
+  saveTasks(tasks);setState({tasks});
+}
+
+// Move an existing task under a new parent (or to top-level if parentId is '')
+function reparentFn(taskId,newParentId){
+  const task=findTask(state.tasks,taskId);
+  if(!task)return;
+  if(taskId===newParentId)return;
+  // Prevent moving a task under one of its own descendants
+  if(newParentId&&findTask(task.children||[],newParentId)){
+    alert("Can't move a task under one of its own subtasks.");return;
+  }
+  // Remove from current position (preserving children)
+  let tasks=removeTask(state.tasks,taskId);
+  // If moving to top-level, assign a new rank
+  if(!newParentId){
+    task.rank=tasks.filter(t=>t.domain===task.domain).length+1;
+    tasks=[...tasks,task];
+  } else {
+    // Inherit domain from new top-level ancestor
+    const newTop=getTopAncestor(tasks,newParentId)||findTask(tasks,newParentId);
+    if(newTop)task.domain=newTop.domain;
+    // Assign rank as last among new siblings
+    const newParent=findTask(tasks,newParentId);
+    task.rank=(newParent?.children?.length||0)+1;
+    tasks=addChild(tasks,newParentId,task);
+    // expand the new parent so user sees the result
+    expandedSet.add(newParentId);
+  }
+  // Re-rank top-level tasks in this domain
+  const tops=tasks.filter(t=>t.domain===task.domain).sort((a,b)=>(a.rank||99)-(b.rank||99));
+  tops.forEach((t,i)=>{tasks=updateTask(tasks,t.id,{rank:i+1});});
+  saveTasks(tasks);
+  setState({tasks,showMoveModal:false,moveTaskId:null});
+}
+
+// ── Form component ─────────────────────────────────────────────────────────
+// All conditional sections always rendered; CSS display toggles on state change.
+// Dedup runs via debounced oninput — no full re-render, no focus loss.
+function renderForm(opts){
+  const {initial={},isEdit}=opts;
+  const stateVal=initial.state||'not-actionable';
+  const domain=initial.domain||state.activeDomain;
+
+  return `
+    <div id="taskform">
+      <div id="f-dedup" style="display:none" class="dedup"></div>
+      <div class="form-row">
+        <div class="form-label">Title</div>
+        <input id="f-title" name="title" value="${escHtml(initial.title||'')}" placeholder="What needs to get done?" oninput="window._dedupCheck(this.value,${isEdit?'true':'false'})"/>
+      </div>
+      <div class="form-inline">
+        <div>
+          <div class="form-label">Domain</div>
+          ${(()=>{
+            // If this task has a top-level ancestor, lock domain to that ancestor
+            // Only lock domain if this task actually has a parent (is not top-level)
+            const hasParent=isEdit&&initial.id?findParent(state.tasks,initial.id)!=null:false;
+            const ancestorDomain=hasParent?getTopDomain(state.tasks,initial.id):null;
+            const effectiveDomain=ancestorDomain||domain;
+            const isLocked=hasParent&&!!ancestorDomain;
+            if(isLocked){
+              return `<div style="font-size:13px;padding:7px 10px;border:0.5px solid var(--border2);border-radius:var(--radius);color:var(--text2);background:var(--bg2)">${effectiveDomain} <span style="font-size:11px;opacity:0.6">(inherited)</span></div><input type="hidden" id="f-domain" value="${effectiveDomain}"/>`;
+            }
+            return `<select id="f-domain" name="domain"><option value="work" ${effectiveDomain==='work'?'selected':''}>Work</option><option value="personal" ${effectiveDomain==='personal'?'selected':''}>Personal</option></select>`;
+          })()}
+        </div>
+        <div>
+          <div class="form-label">Actionability</div>
+          <select id="f-state" name="state" onchange="window._formStateChange(this.value)">
+            <option value="actionable" ${stateVal==='actionable'?'selected':''}>Actionable</option>
+            <option value="waiting" ${stateVal==='waiting'?'selected':''}>Waiting</option>
+            <option value="not-actionable" ${stateVal==='not-actionable'?'selected':''}>Not actionable</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row" id="f-parent-row">
+        <div class="form-label">Parent task (optional)</div>
+        <select id="f-parent">
+          <option value="">— None (top-level task) —</option>
+          ${flattenTasks(state.tasks).filter(t=>t.id!==(initial.id||'')).map(t=>{
+            const depth=getTaskDepth(state.tasks,t.id);
+            const indent='    '.repeat(depth);
+            // For edits find actual parent; for new tasks use modalParentId
+            const effectiveParentId=isEdit
+              ?(findParent(state.tasks,initial.id||'')?.id||null)
+              :state.modalParentId;
+            return `<option value="${t.id}" ${effectiveParentId===t.id?'selected':''}>${indent}${escHtml(t.title)} (${t.domain})</option>`;
+          }).join('')}
+        </select>
+      </div>
+
+      <div class="form-row" id="f-placeafter-row">
+        <div class="form-label">Priority — place after</div>
+        <select id="f-placeafter">
+          ${(()=>{
+            // Determine the sibling list: tasks at same level as where this will land
+            const parentId=isEdit
+              ?(findParent(state.tasks,initial.id||'')?.id||null)
+              :state.modalParentId||null;
+            let siblings;
+            if(parentId){
+              const p=findTask(state.tasks,parentId);
+              siblings=(p?.children||[]).filter(t=>t.id!==(initial.id||'')).sort((a,b)=>(a.rank||99)-(b.rank||99));
+            } else {
+              siblings=state.tasks.filter(t=>t.domain===(document.getElementById('f-domain')?.value||state.activeDomain)&&t.id!==(initial.id||'')).sort((a,b)=>(a.rank||99)-(b.rank||99));
+            }
+            const currentRank=isEdit?initial.rank:null;
+            // Find current position for default selection
+            const currentPrevSibling=isEdit&&currentRank>1?siblings.find(s=>s.rank===currentRank-1):null;
+            const opts=`<option value="first" ${!currentPrevSibling&&isEdit?'selected':''}>— First (highest priority) —</option>`
+              +siblings.map(s=>`<option value="${s.id}" ${currentPrevSibling?.id===s.id?'selected':''}>${getRankLabel(state.tasks,s.id)} ${escHtml(s.title)}</option>`).join('')
+              +`<option value="last" ${!isEdit||(!currentPrevSibling&&currentRank>1)?'':''} ${isEdit?'':'selected'}>— Last (lowest priority) —</option>`;
+            return opts;
+          })()}
+        </select>
+      </div>
+
+      <div id="f-section-actionable" style="display:${stateVal==='actionable'?'block':'none'}">
+        <div class="form-inline">
+          <div>
+            <div class="form-label">Duration estimate</div>
+            <select id="f-duration" name="duration">
+              <option value="">Select…</option>
+              ${DURATIONS.map(d=>`<option ${initial.duration===d?'selected':''}>${d}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <div class="form-label">Due date (optional)</div>
+            <input type="date" id="f-dueDate" name="dueDate" value="${initial.dueDate||''}" onchange="window._checkDueDate(this)"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-label">Notes (optional)</div>
+          <textarea id="f-notes-actionable" name="notes-actionable" style="min-height:44px" placeholder="Additional context…">${escHtml(initial.notes||'')}</textarea>
+        </div>
+      </div>
+
+      <div id="f-section-waiting" style="display:${stateVal==='waiting'?'block':'none'}">
+        <div class="waiting-extra">
+          <div class="form-inline">
+            <div>
+              <div class="form-label">Waiting on</div>
+              <input id="f-waitingWho" name="waitingWho" value="${escHtml(initial.waitingWho||'')}" placeholder="Person's name"/>
+            </div>
+            <div>
+              <div class="form-label">Expected by</div>
+              <input type="date" id="f-dueDate-waiting" name="dueDate-waiting" value="${initial.dueDate||initial.waitingBy||''}" onchange="window._checkDueDate(this)"/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="f-section-notactionable" style="display:${stateVal==='not-actionable'?'block':'none'}">
+        <div class="form-inline">
+          <div>
+            <div class="form-label">Due date (optional)</div>
+            <input type="date" id="f-dueDate-na" name="dueDate-na" value="${stateVal==='not-actionable'?(initial.dueDate||''):''}" onchange="window._checkDueDate(this)"/>
+          </div>
+          <div></div>
+        </div>
+        <div class="form-row">
+          <div class="form-label">Thinking space — what might the next step be?</div>
+          <textarea id="f-notes-na" name="notes-na" placeholder="Use this to think through what needs to happen…">${escHtml(initial.notes||'')}</textarea>
+        </div>
+      </div>
+
+      <div id="f-due-warn" style="display:none;font-size:11px;color:var(--amber-text);margin-bottom:8px;line-height:1.5"></div>
+      <div class="btn-row">
+        <button onclick="window._formCancel()">Cancel</button>
+        <button class="primary" onclick="window._formSave()">${isEdit?'Save changes':'Add task'}</button>
+      </div>
+    </div>`;
+}
+
+window._formStateChange=function(val){
+  document.getElementById('f-section-actionable').style.display=val==='actionable'?'block':'none';
+  document.getElementById('f-section-waiting').style.display=val==='waiting'?'block':'none';
+  document.getElementById('f-section-notactionable').style.display=val==='not-actionable'?'block':'none';
+};
+
+// Dedup: runs on every keystroke with 400ms debounce, updates div in-place — no re-render.
+let _dedupTimer=null;
+window._dedupCheck=function(title,isEdit){
+  clearTimeout(_dedupTimer);
+  const box=document.getElementById('f-dedup');
+  if(!box)return;
+  if(isEdit||!title||title.trim().length<4){box.style.display='none';return;}
+  _dedupTimer=setTimeout(()=>{
+    const matches=findSimilar(state.tasks,title.trim());
+    if(matches.length===0){box.style.display='none';return;}
+    box.innerHTML='<strong>Similar tasks already exist — is this a duplicate or subtask?</strong><br>'
+      +matches.map(t=>`• ${escHtml(t.title)} <span style="opacity:.7">(${t.domain})</span>`).join('<br>');
+    box.style.display='block';
+  },400);
+};
+
+// ── Task node ──────────────────────────────────────────────────────────────
+function renderTaskNode(task,isTop,expanded,dimmed){
+  const overdue=task.state==='waiting'&&isOverdue(task.waitingBy);
+  const dueDateOverdue=task.dueDate&&isOverdue(task.dueDate);
+  const hasChildren=task.children?.length>0;
+
+  return `
+    <div class="task-row${isTop?' top':''}" onclick="window._editTask('${task.id}')" style="cursor:pointer${dimmed?';opacity:0.4':''}"
+>
+      <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:1px">
+        <span class="drag-handle" onpointerdown="event.stopPropagation();window._dragPointerDown(event,'${task.id}')" title="Drag to reorder">⠿</span>
+        <button class="expand-btn" onclick="event.stopPropagation();window._toggleExpand('${task.id}')">${hasChildren?(expanded?'▾':'▸'):'·'}</button>
+        ${hasChildren?`<button class="expand-btn" onclick="event.stopPropagation();${expanded?`window._collapseAll('${task.id}')`:`window._expandAll('${task.id}')`}" title="${expanded?'Collapse all':'Expand all'}" style="font-size:8px;opacity:0.5;height:12px">${expanded?'⇱':'⇲'}</button>`:''}
+      </div>
+      <div class="task-main">
+        <div class="task-title" style="${task.closed?'text-decoration:line-through;opacity:0.5;':''}">
+          ${escHtml(task.title)}
+        </div>
+        <div class="task-meta">
+          <span class="badge b-neutral">${getRankLabel(state.tasks,task.id)}</span>
+          <span class="badge ${STATE_BADGE[task.state]}" onclick="event.stopPropagation();window._cycleState('${task.id}')" title="Click to cycle actionability" style="cursor:pointer">${STATE_LABELS[task.state]}</span>
+          ${task.duration?`<span class="badge b-neutral">${task.duration}</span>`:''}
+          ${task.dueDate?`<span class="badge ${dueDateOverdue?'b-overdue':'b-neutral'}">${task.state==='waiting'?'Expected by':'Due'} ${fmtDate(task.dueDate)}</span>`:''}
+          ${task.state==='waiting'&&task.waitingWho?`<span class="badge b-waiting">↻ ${escHtml(task.waitingWho)}</span>`:''}
+          ${overdue?`<span class="badge b-overdue">Overdue — follow up</span>`:''}
+        </div>
+        ${task.notes?`<div class="task-notes">${escHtml(task.notes.slice(0,120))}${task.notes.length>120?'…':''}</div>`:''}
+        ${state.closeBlockedId===task.id?`<div style="font-size:11px;color:var(--amber-text);margin-top:4px;line-height:1.5">Close all open subtasks (${state.closeBlockedCount}) before closing this task.</div>`:''}
+      </div>
+      <div class="task-actions" onclick="event.stopPropagation()">
+        <div class="rank-arrows"><button class="rank-arrow" onclick="window._rerank('${task.id}','up')">▲</button><button class="rank-arrow" onclick="window._rerank('${task.id}','down')">▼</button></div>
+        ${isTop
+          ?`<button class="ghost" onclick="window._closeTop('${task.id}')" title="Close task" style="font-size:13px;color:var(--teal-text)">✓</button>`
+          :(task.closed
+            ?`<button class="ghost" onclick="window._toggleSubClosed('${task.id}')" title="Re-open" style="font-size:11px;color:var(--text3)">↩</button>`
+            :`<button class="ghost" onclick="window._toggleSubClosed('${task.id}')" title="Mark done" style="font-size:13px;color:var(--teal-text)">✓</button>`)
+        }
+        <button class="ghost" onclick="window._addChild('${task.id}')" title="Add subtask" style="font-size:15px;line-height:1">+</button>
+        <button class="ghost" onclick="window._moveTask('${task.id}')" title="Move under…" style="font-size:12px">↕</button>
+        ${state.confirmDeleteId===task.id
+          ?`<span style="display:inline-flex;align-items:center;gap:3px">
+              <button class="ghost danger-btn" onclick="window._deleteTask('${task.id}')" style="font-size:11px;padding:2px 6px">Yes, delete</button>
+              <button class="ghost" onclick="setState({confirmDeleteId:null})" style="font-size:11px;padding:2px 6px">Cancel</button>
+            </span>`
+          :(task.children?.length>0
+            ?`<button class="ghost danger-btn" title="Cannot delete — has subtasks" style="opacity:0.3;cursor:not-allowed">×</button>`
+            :`<button class="ghost danger-btn" onclick="setState({confirmDeleteId:'${task.id}'})" title="Delete">×</button>`)
+        }
+      </div>
+    </div>`;
+}
+
+// Does this exact task (not descendants) match the filter?
+// Closed tasks never match any filter.
+function taskSelfMatches(task,filter){
+  if(task.closed)return false;
+  if(!filter)return true;
+  if(filter==='actionable')return task.state==='actionable';
+  if(filter==='waiting')return task.state==='waiting';
+  if(filter==='needs-definition')return needsDefinition(task);
+  return true;
+}
+// Does this task or any descendant match the filter?
+function treeHasMatch(task,filter){
+  if(!filter)return true;
+  if(taskSelfMatches(task,filter))return true;
+  return(task.children||[]).some(c=>treeHasMatch(c,filter));
+}
+function renderTree(tasks,depth,expandedSet,filter){
+  if(!tasks?.length)return'';
+  const sorted=[...tasks].sort((a,b)=>(a.rank||99)-(b.rank||99));
+  return sorted.map(t=>{
+    const isTop=depth===0;
+    if(!isTop&&t.closed&&!state.showClosedSubtasks)return'';
+    // Rule 3: hide entire top-level tree if nothing in it matches
+    if(isTop&&filter&&!treeHasMatch(t,filter))return'';
+    const exp=expandedSet.has(t.id);
+    // Rule 1: undimmed if task itself matches. Rule 2: dimmed if it doesn't but tree does.
+    // Opacity is applied only to the task row, NOT the wrapper, so children render independently.
+    const dimmed=filter&&!taskSelfMatches(t,filter);
+    let html=`<div id="node-${t.id}">${renderTaskNode(t,isTop,exp,dimmed)}`;
+    if(t.children?.length&&exp){
+      html+=`<div class="tree-children">${renderTree(t.children,depth+1,expandedSet,filter)}</div>`;
+    }
+    html+='</div>';
+    return html;
+  }).join('');
+}
+
+// ── Operation mode UI ──────────────────────────────────────────────────────
+function renderArchiveSubtasks(children,depth){
+  if(!children?.length)return'';
+  return children.map(c=>`
+    <div style="display:flex;align-items:flex-start;gap:6px;padding:6px 10px;border-radius:var(--radius);background:var(--bg2);border:0.5px solid var(--border);opacity:0.6;margin-bottom:3px">
+      <div style="width:18px;flex-shrink:0;color:var(--text3);font-size:10px;padding-top:2px">${c.closed?'✓':'○'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;text-decoration:${c.closed?'line-through':'none'};opacity:${c.closed?'0.6':'1'}">${escHtml(c.title)}</div>
+        ${c.children?.length?`<div style="margin-top:4px;padding-left:12px;border-left:0.5px solid var(--border)">${renderArchiveSubtasks(c.children,depth+1)}</div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+function renderArchiveView(){
+  if(state.archive.length===0){
+    return`<div class="empty">No archived tasks yet.<br>Completed top-level tasks will appear here.</div>`;
+  }
+  const byDomain={work:state.archive.filter(t=>t.domain==='work'),personal:state.archive.filter(t=>t.domain==='personal')};
+  let html='';
+  ['work','personal'].forEach(d=>{
+    if(!byDomain[d].length)return;
+    html+=`<div class="section-label" style="margin-top:${d==='personal'?'16px':'0'}">${d} — archived</div>`;
+    html+=byDomain[d].map(t=>{
+      const hasChildren=t.children?.length>0;
+      const expanded=archiveExpandedSet.has(t.id);
+      return`
+      <div>
+        <div class="task-row" style="opacity:0.65;cursor:default">
+          <button class="expand-btn" onclick="event.stopPropagation();window._toggleArchiveExpand('${t.id}')">${hasChildren?(expanded?'▾':'▸'):'·'}</button>
+          <div class="task-main">
+            <div class="task-title" style="text-decoration:line-through">${escHtml(t.title)}</div>
+            <div class="task-meta">
+              <span class="badge b-neutral">closed</span>
+              ${t.domain==='work'?'<span class="badge" style="background:var(--blue-bg);color:var(--blue-text)">work</span>':'<span class="badge" style="background:var(--teal-bg);color:var(--teal-text)">personal</span>'}
+              ${hasChildren?`<span class="badge b-neutral">${t.children.length} subtask${t.children.length>1?'s':''}</span>`:''}
+            </div>
+          </div>
+          <div class="task-actions" onclick="event.stopPropagation()">
+            <button class="ghost" onclick="window._restoreArchived('${t.id}')" title="Restore" style="font-size:11px">↩</button>
+            <button class="ghost danger-btn" onclick="window._deleteArchived('${t.id}')" title="Delete permanently">×</button>
+          </div>
+        </div>
+        ${hasChildren&&expanded?`<div class="tree-children">${renderArchiveSubtasks(t.children,1)}</div>`:''}
+      </div>`;
+    }).join('');
+  });
+  return html;
+}
+
+// Returns 'work' if current time in the configured work timezone falls within work schedule
+function getContextDomain(){
+  const s=state.settings;
+  const tz=s.workTimezone||'America/Los_Angeles';
+  const now=new Date();
+  try{
+    // Use separate calls per field — combined formats vary by browser/OS
+    const day=now.toLocaleString('en-US',{timeZone:tz,weekday:'short'});
+    const h=parseInt(now.toLocaleString('en-US',{timeZone:tz,hour:'2-digit',hour12:false}),10);
+    const m=parseInt(now.toLocaleString('en-US',{timeZone:tz,minute:'2-digit'}),10);
+    const nowMins=(isNaN(h)?0:h)*60+(isNaN(m)?0:m);
+    const[sh,sm]=(s.workStart||'05:00').split(':');
+    const[eh,em]=(s.workEnd||'14:00').split(':');
+    const startMins=parseInt(sh,10)*60+parseInt(sm,10);
+    const endMins=parseInt(eh,10)*60+parseInt(em,10);
+    const isWorkDay=(s.workDays||['Mon','Tue','Wed','Thu','Fri']).includes(day);
+    const isWorkHours=nowMins>=startMins&&nowMins<endMins;
+    return(isWorkDay&&isWorkHours)?'work':'personal';
+  }catch(e){
+    return'personal';
+  }
+}
+
+function renderSettings(){
+  const s=state.settings;
+  const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const timeOpts=(sel)=>Array.from({length:48},(_,i)=>{
+    const h=Math.floor(i/2);const m=i%2===0?'00':'30';
+    const val=`${String(h).padStart(2,'0')}:${m}`;
+    const label=h===0?`12:${m} AM`:h<12?`${h}:${m} AM`:h===12?`12:${m} PM`:`${h-12}:${m} PM`;
+    return`<option value="${val}" ${sel===val?'selected':''}>${label}</option>`;
+  }).join('');
+
+  return`<div style="max-width:480px">
+    <div style="font-size:15px;font-weight:500;margin-bottom:16px">Settings</div>
+
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Work schedule</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Work timezone</div>
+      <select onchange="window._saveSetting('workTimezone',this.value)" style="font-size:13px;margin-bottom:14px">
+        ${[
+          ['Pacific/Honolulu','Hawaii (HST, UTC−10)'],
+          ['America/Anchorage','Alaska (AKST, UTC−9)'],
+          ['America/Los_Angeles','Pacific (PST/PDT, UTC−8/−7)'],
+          ['America/Denver','Mountain (MST/MDT, UTC−7/−6)'],
+          ['America/Phoenix','Arizona (MST, UTC−7)'],
+          ['America/Chicago','Central (CST/CDT, UTC−6/−5)'],
+          ['America/New_York','Eastern (EST/EDT, UTC−5/−4)'],
+          ['America/Halifax','Atlantic (AST/ADT, UTC−4/−3)'],
+          ['America/St_Johns','Newfoundland (NST/NDT, UTC−3:30)'],
+          ['America/Sao_Paulo','Brasília (BRT, UTC−3)'],
+          ['Atlantic/Azores','Azores (AZOT, UTC−1)'],
+          ['UTC','UTC (UTC±0)'],
+          ['Europe/London','London (GMT/BST, UTC+0/+1)'],
+          ['Europe/Paris','Central Europe (CET/CEST, UTC+1/+2)'],
+          ['Europe/Helsinki','Eastern Europe (EET/EEST, UTC+2/+3)'],
+          ['Europe/Moscow','Moscow (MSK, UTC+3)'],
+          ['Asia/Dubai','Gulf (GST, UTC+4)'],
+          ['Asia/Karachi','Pakistan (PKT, UTC+5)'],
+          ['Asia/Kolkata','India (IST, UTC+5:30)'],
+          ['Asia/Dhaka','Bangladesh (BST, UTC+6)'],
+          ['Asia/Bangkok','Indochina (ICT, UTC+7)'],
+          ['Asia/Shanghai','China (CST, UTC+8)'],
+          ['Asia/Tokyo','Japan (JST, UTC+9)'],
+          ['Australia/Sydney','Sydney (AEST/AEDT, UTC+10/+11)'],
+          ['Pacific/Auckland','New Zealand (NZST/NZDT, UTC+12/+13)'],
+        ].map(([val,label])=>`<option value="${val}" ${(s.workTimezone||'America/Los_Angeles')===val?'selected':''}>${label}</option>`).join('')}
+      </select>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Work days</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px">
+        ${days.map(d=>`<button onclick="window._toggleWorkDay('${d}')" style="font-size:12px;padding:4px 10px;border-radius:99px;border:0.5px solid ${s.workDays.includes(d)?'var(--blue-border)':'var(--border2)'};background:${s.workDays.includes(d)?'var(--blue-bg)':'transparent'};color:${s.workDays.includes(d)?'var(--blue-text)':'var(--text2)'};">${d}</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:10px">
+        <div style="flex:1">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Start time</div>
+          <select onchange="window._saveSetting('workStart',this.value)" style="font-size:13px">
+            ${timeOpts(s.workStart)}
+          </select>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px">End time</div>
+          <select onchange="window._saveSetting('workEnd',this.value)" style="font-size:13px">
+            ${timeOpts(s.workEnd)}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">What now? defaults</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Default time available</div>
+      <select onchange="window._saveSetting('defaultAvail',this.value)" style="font-size:13px;margin-bottom:14px">
+        ${['15 min','30 min','1 hr','2 hrs','Half day','All day'].map(a=>`<option ${s.defaultAvail===a?'selected':''}>${a}</option>`).join('')}
+      </select>
+    </div>
+
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Cross-domain tasks</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-size:13px">Enable cross-domain bleed</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">Allow tasks from the other domain to appear in What now?</div>
+        </div>
+        <button onclick="window._saveSetting('crossDomainBleed',!state.settings.crossDomainBleed)" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${s.crossDomainBleed?'var(--teal-border)':'var(--border2)'};background:${s.crossDomainBleed?'var(--teal-bg)':'transparent'};color:${s.crossDomainBleed?'var(--teal-text)':'var(--text2)'}">
+          ${s.crossDomainBleed?'On':'Off'}
+        </button>
+      </div>
+
+      <div style="opacity:${s.crossDomainBleed?'1':'0.4'};pointer-events:${s.crossDomainBleed?'auto':'none'}">
+
+        <div style="display:flex;gap:10px;margin-bottom:14px">
+          <div style="flex:1">
+            <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Due within (days)</div>
+            <select onchange="window._saveSetting('crossDomainDaysUntilDue',parseInt(this.value))" style="font-size:13px">
+              ${[0,1,2,3,5,7,14,30].map(d=>`<option value="${d}" ${s.crossDomainDaysUntilDue===d?'selected':''}>${d===0?'Overdue only':d===1?'1 day':d+' days'}</option>`).join('')}
+            </select>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Duration cap</div>
+            <select onchange="window._saveSetting('crossDomainDurationCap',this.value)" style="font-size:13px">
+              <option value="" ${!s.crossDomainDurationCap?'selected':''}>Any duration</option>
+              ${['< 5 min','5–15 min','15–30 min','30–60 min','1–2 hrs'].map(d=>`<option ${s.crossDomainDurationCap===d?'selected':''}>${d}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <div style="font-size:12px;color:var(--text2)">Minimum priority (top %)</div>
+            <div style="font-size:12px;font-weight:500">Top ${s.crossDomainMinPriorityPct}%</div>
+          </div>
+          <input type="range" min="1" max="100" step="1" value="${s.crossDomainMinPriorityPct}"
+            oninput="window._saveSettingDebounced('crossDomainMinPriorityPct',parseInt(this.value))"
+            style="width:100%"/>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:2px">
+            <span>Top 1% only</span><span>All tasks</span>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-size:13px">Include waiting tasks</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px">Surface cross-domain waiting tasks that need follow-up</div>
+          </div>
+          <button onclick="window._saveSetting('crossDomainIncludeWaiting',!state.settings.crossDomainIncludeWaiting)" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${s.crossDomainIncludeWaiting?'var(--teal-border)':'var(--border2)'};background:${s.crossDomainIncludeWaiting?'var(--teal-bg)':'transparent'};color:${s.crossDomainIncludeWaiting?'var(--teal-text)':'var(--text2)'}">
+            ${s.crossDomainIncludeWaiting?'On':'Off'}
+          </button>
+        </div>
+
+        <div style="border-top:0.5px solid var(--border);padding-top:14px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <div>
+              <div style="font-size:12px;color:var(--text2)">Penalty multiplier</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:1px">How strongly cross-domain tasks compete against same-domain tasks</div>
+            </div>
+            <div style="font-size:12px;font-weight:500;flex-shrink:0;margin-left:12px">${s.crossDomainMultiplier.toFixed(1)}</div>
+          </div>
+          <input type="range" min="0" max="1" step="0.1" value="${s.crossDomainMultiplier}"
+            oninput="window._saveSettingDebounced('crossDomainMultiplier',parseFloat(this.value))"
+            style="width:100%"/>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:2px">
+            <span>Never surface</span><span>Compete equally</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Organize view</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:13px">Show closed subtasks by default</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">When opening the app, show or hide completed subtasks</div>
+        </div>
+        <button onclick="window._saveSetting('showClosedSubtasksDefault',!state.settings.showClosedSubtasksDefault)" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${s.showClosedSubtasksDefault?'var(--teal-border)':'var(--border2)'};background:${s.showClosedSubtasksDefault?'var(--teal-bg)':'transparent'};color:${s.showClosedSubtasksDefault?'var(--teal-text)':'var(--text2)'}">
+          ${s.showClosedSubtasksDefault?'On':'Off'}
+        </button>
+      </div>
+    </div>
+
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Google Drive sync</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Your task data is stored in a private app folder in your Google Drive, invisible to other apps.</div>
+      <div id="gdrive-status-block">
+        ${gdrive.status==='connected'?`
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div>
+              <div style="font-size:13px;color:var(--teal-text);font-weight:500">&#9679; Connected</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px">${gdrive.lastSync?'Last synced '+gdrive.lastSync.toLocaleTimeString():'Synced'}</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button onclick="window._gdriveSync()" style="font-size:12px">Sync now</button>
+              <button onclick="window._gdriveDisconnect()" style="font-size:12px;color:var(--red-text)">Disconnect</button>
+            </div>
+          </div>`:`
+          <div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Google OAuth Client ID</div>
+            <input id="gdrive-client-id" type="text" value="${escHtml(gdrive.clientId)}" placeholder="Paste your OAuth 2.0 Client ID here"
+              onchange="gdrive.clientId=this.value;localStorage.setItem('${GDRIVE_CLIENT_KEY}',this.value)"
+              style="font-size:12px;margin-bottom:8px"/>
+            ${gdrive.error?`<div style="font-size:11px;color:var(--red-text);margin-bottom:6px">${escHtml(gdrive.error)}</div>`:''}
+            <button class="primary" onclick="window._gdriveConnect()" style="width:100%;padding:7px"
+              ${gdrive.status==='connecting'?'disabled':''}>
+              ${gdrive.status==='connecting'?'Connecting...':'Connect Google Drive'}
+            </button>
+          </div>`}
+        ${gdrive.status==='syncing'?`<div style="font-size:11px;color:var(--text2);margin-top:6px">Syncing...</div>`:''}
+        ${gdrive.status==='error'?`<div style="font-size:11px;color:var(--red-text);margin-top:6px">${escHtml(gdrive.error)}</div>`:''}
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:12px;line-height:1.7;border-top:0.5px solid var(--border);padding-top:10px">
+        <strong>Setup guide:</strong><br>
+        1. Go to <a href="https://console.cloud.google.com" target="_blank" style="color:var(--blue-text)">console.cloud.google.com</a> and create a project<br>
+        2. Enable the <strong>Google Drive API</strong><br>
+        3. OAuth consent screen: External, add <em>drive.appdata</em> scope, add yourself as test user<br>
+        4. Credentials &rarr; Create OAuth client ID &rarr; Web application<br>
+        5. Add your file's URL to Authorised JavaScript origins and redirect URIs<br>
+        6. Copy the Client ID and paste above
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderOpMode(){
+  const flat=flattenTasks(state.tasks);
+  const hasActionable=flat.some(t=>!t.closed&&(t.state==='actionable'||t.state==='waiting'));
+
+  // Controls bar — always visible at top
+  const controlsBar=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <div style="display:flex;gap:4px">
+        <button onclick="setState({opDomain:'work',opResults:null,opDismissed:new Set()})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.opDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.opDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
+        <button onclick="setState({opDomain:'personal',opResults:null,opDismissed:new Set()})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.opDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.opDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.opDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
+      </div>
+      <select onchange="setState({opAvail:this.value,opResults:null,opDismissed:new Set()})" style="font-size:12px;padding:4px 8px;flex:1;min-width:100px">
+        <option value="">Any duration</option>
+        ${['15 min','30 min','1 hr','2 hrs','Half day','All day'].map(a=>`<option ${state.opAvail===a?'selected':''}>${a}</option>`).join('')}
+      </select>
+      <button class="primary" style="font-size:12px;padding:4px 12px;white-space:nowrap" onclick="window._runOp()" ${!hasActionable?'disabled':''}>
+        ${state.opResults?'Re-run →':'Show tasks →'}
+      </button>
+    </div>`;
+
+  if(state.opLoading)return controlsBar+`<div class="loading">Scoring your tasks<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>`;
+
+  if(state.opResults){
+    const results=state.opResults;
+    const visible=results.filter(r=>!state.opDismissed.has(r.task.id));
+    return controlsBar+`
+      ${visible.length===0?'<div class="loading" style="padding:20px">Finding more tasks…</div>':visible.map((r,i)=>`
+        <div class="op-card${state.opChosen===i?' chosen-'+state.opDomain:''}" style="position:relative;cursor:pointer" onclick="setState({opChosen:${i}})">
+          <div class="op-card-inner">
+            <div class="op-body">
+              ${(()=>{
+                const ancestor=getTopAncestor(state.tasks,r.task.id);
+                const isTop=!ancestor||ancestor.id===r.task.id;
+                return isTop?'':`<div style="font-size:11px;color:var(--text3);margin-bottom:2px">↳ ${escHtml(ancestor.title)}</div>`;
+              })()}
+              <div class="op-title"><span style="color:var(--text3);font-weight:400;margin-right:6px">${getRankLabel(state.tasks,r.task.id)}</span>${escHtml(r.task.title)}</div>
+              <div class="op-badges">
+                <span class="badge" style="${r.task.domain==='work'?'background:var(--blue-bg);color:var(--blue-text)':'background:var(--teal-bg);color:var(--teal-text)'}">${r.task.domain==='work'?'Work':'Personal'}</span>
+                <span class="badge ${STATE_BADGE[r.task.state]}">${STATE_LABELS[r.task.state]}</span>
+                ${r.task.duration?`<span class="badge b-neutral">${r.task.duration}</span>`:''}
+                ${r.task.dueDate?`<span class="badge ${isOverdue(r.task.dueDate)?'b-overdue':'b-neutral'}">${r.task.state==='waiting'?'Expected by':'Due'} ${fmtDate(r.task.dueDate)}</span>`:''}
+                ${r.crossDomain?`<span class="badge b-overdue">Cross-domain</span>`:''}
+              </div>
+              <div class="op-why">${escHtml(r.why)}</div>
+              ${r.task.state==='waiting'&&r.task.waitingWho?`<div style="font-size:12px;color:var(--amber-text);margin-top:5px">↻ Waiting on ${escHtml(r.task.waitingWho)}</div>`:''}
+              ${r.task.notes?`<div style="font-size:12px;color:var(--text2);margin-top:5px;line-height:1.55;border-top:0.5px solid var(--border);padding-top:5px">${escHtml(r.task.notes)}</div>`:''}
+            </div>
+            <button class="ghost" onclick="event.stopPropagation();window._opDone('${r.task.id}')" title="Mark complete" style="font-size:13px;color:var(--teal-text);flex-shrink:0;align-self:center;margin-top:2px">✓</button>
+          </div>
+        </div>`).join('')}
+      ${state.opChosen!==null&&visible[state.opChosen]?`
+        <div style="margin-top:10px;padding:10px 14px;background:${state.opDomain==='work'?'var(--blue-bg)':'var(--teal-bg)'};border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--teal-border)'};border-radius:var(--radius);font-size:13px;color:${state.opDomain==='work'?'var(--blue-text)':'var(--teal-text)'};line-height:1.6">
+          Working on: <strong>${escHtml(visible[state.opChosen].task.title)}</strong><br>
+          <span style="font-size:11px;opacity:0.75">Click ✓ when done, or click another task to switch.</span>
+        </div>`:''}`;
+  }
+
+  return controlsBar+(!hasActionable?`<p style="font-size:12px;color:var(--text2);text-align:center;margin-top:24px">No actionable tasks yet — add some in Organize mode.</p>`:'');
+}
+
+// ── Main render ────────────────────────────────────────────────────────────
+let expandedSet=new Set();
+let archiveExpandedSet=new Set();
+
+// Build dotted rank label by walking ancestors
+// e.g. top rank 2, child rank 1, grandchild rank 3 → "2.1.3"
+function getRankLabel(tasks,id){
+  const parts=[];
+  let current=findTask(tasks,id);
+  if(!current)return'';
+  parts.unshift(current.rank||'?');
+  let parent=findParent(tasks,id);
+  while(parent){
+    parts.unshift(parent.rank||'?');
+    parent=findParent(tasks,parent.id);
+  }
+  return parts.join('.');
+}
+
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// Format YYYY-MM-DD → MM/DD/YYYY for display
+function fmtDate(d){
+  if(!d)return'';
+  const[y,m,day]=d.split('-');
+  return`${m}/${day}/${y}`;
+}
+
+// Get the domain of the top-level ancestor of a task
+function getTopDomain(tasks,id){
+  const top=getTopAncestor(tasks,id);
+  return top?top.domain:null;
+}
+
+function render(){
+  const flat=flattenTasks(state.tasks);
+  const overdueWaiting=flat.filter(t=>t.domain===state.activeDomain&&t.state==='waiting'&&isOverdue(t.dueDate||t.waitingBy));
+  const domainFlat=flattenTasks(state.tasks.filter(t=>t.domain===state.activeDomain));
+  const actionableCount=domainFlat.filter(t=>t.state==='actionable'&&!t.closed).length;
+  const waitingCount=domainFlat.filter(t=>t.state==='waiting'&&!t.closed).length;
+  const notActionableCount=domainFlat.filter(t=>needsDefinition(t)).length;
+  const domainTasks=state.tasks.filter(t=>t.domain===state.activeDomain).sort((a,b)=>(a.rank||99)-(b.rank||99));
+
+  const html=`
+    <div class="app">
+      <div class="header">
+        <h1>Task system</h1>
+        <div class="mode-tabs">
+          <button class="mode-tab${state.mode==='org'?' active':''}" onclick="setState({mode:'org'})">Organize</button>
+          <button class="mode-tab${state.mode==='op'?' active':''}" onclick="window._switchToOp()">What now?</button>
+          <button class="mode-tab${state.mode==='archive'?' active':''}" onclick="setState({mode:'archive'})">Archive${state.archive.length>0?` (${state.archive.length})`:''}</button>
+          <button class="mode-tab${state.mode==='settings'?' active':''}" onclick="setState({mode:'settings'})">⚙</button>
+        </div>
+      </div>
+
+      ${overdueWaiting.length>0?`<div class="overdue-banner">⚠ ${overdueWaiting.length} overdue waiting item${overdueWaiting.length>1?'s':''}: ${overdueWaiting.map(t=>escHtml(t.title)+(t.dueDate?' (by '+fmtDate(t.dueDate)+')':'')).join(', ')} — time to follow up.</div>`:''}
+
+      ${state.mode==='org'?`
+        <div style="flex-shrink:0">
+          <div class="stats-row">
+          <div class="stat${state.filterState===null?' stat-active':''}" onclick="setState({filterState:null})" style="cursor:pointer">
+            <div class="stat-num">${domainFlat.filter(t=>!t.closed).length}</div>
+            <div class="stat-label">All tasks</div>
+          </div>
+          <div class="stat${state.filterState==='actionable'?' stat-active':''}" onclick="setState({filterState:state.filterState==='actionable'?null:'actionable'})" style="cursor:pointer">
+            <div class="stat-num" style="color:var(--teal-text)">${actionableCount}</div>
+            <div class="stat-label">Actionable</div>
+          </div>
+          <div class="stat${state.filterState==='waiting'?' stat-active':''}" onclick="setState({filterState:state.filterState==='waiting'?null:'waiting'})" style="cursor:pointer">
+            <div class="stat-num" style="color:var(--amber-text)">${waitingCount}</div>
+            <div class="stat-label">Waiting</div>
+          </div>
+          <div class="stat${state.filterState==='needs-definition'?' stat-active':''}" onclick="setState({filterState:state.filterState==='needs-definition'?null:'needs-definition'})" style="cursor:pointer">
+            <div class="stat-num" style="color:var(--red-text)">${notActionableCount}</div>
+            <div class="stat-label">Needs definition</div>
+          </div>
+        </div>
+
+        <div class="domain-tabs">
+          <button class="domain-tab${state.activeDomain==='work'?' work':''}" onclick="setState({activeDomain:'work'})">Work</button>
+          <button class="domain-tab${state.activeDomain==='personal'?' personal':''}" onclick="setState({activeDomain:'personal'})">Personal</button>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="section-label" style="margin-bottom:0">${state.activeDomain} tasks — ranked by priority</div>
+            ${flattenTasks(domainTasks).some(t=>t.closed)?`<button class="ghost" style="font-size:11px;color:var(--text3)" onclick="setState({showClosedSubtasks:!state.showClosedSubtasks})">${state.showClosedSubtasks?'Hide closed':'Show closed'}</button>`:''}
+            ${domainTasks.some(t=>t.children?.length)?`
+              <button class="ghost" style="font-size:11px;color:var(--text3)" onclick="window._expandAllTop('${state.activeDomain}')" title="Expand all">⇲ All</button>
+              <button class="ghost" style="font-size:11px;color:var(--text3)" onclick="window._collapseAllTop('${state.activeDomain}')" title="Collapse all">⇱ All</button>
+            `:''}
+          </div>
+          <button class="add-btn" onclick="setState({showModal:true,modalParentId:null})" style="margin-top:0;width:auto;padding:5px 12px;${state.activeDomain==='work'?'background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue-text)':'background:var(--teal-bg);border-color:var(--teal-border);color:var(--teal-text)'}">
+            <span style="font-size:16px;line-height:1">+</span> Add ${state.activeDomain} task
+          </button>
+        </div>
+        </div>
+        <div class="task-tree" id="task-tree">
+          ${(()=>{
+            if(domainTasks.length===0)return`<div class="empty">No ${state.activeDomain} tasks yet.<br>Click the button above to get started.</div>`;
+            const anyMatch=!state.filterState||domainTasks.some(t=>treeHasMatch(t,state.filterState));
+            if(!anyMatch)return`<div class="empty">No ${state.activeDomain} tasks match this filter.</div>`;
+            return renderTree(domainTasks,0,expandedSet,state.filterState);
+          })()}
+        </div>
+
+      `:(state.mode==='archive'?`<div style="flex:1;overflow-y:auto;padding-bottom:16px">${renderArchiveView()}</div>`:state.mode==='settings'?`<div id="settings-panel" style="flex:1;overflow-y:auto;padding-bottom:16px">${renderSettings()}</div>`:`<div id="op-mode" style="flex:1;overflow-y:auto;padding-bottom:16px">${renderOpMode()}</div>`)}
+    </div>
+
+    ${state.showModal?`
+      <div class="overlay" onclick="if(event.target===this)setState({showModal:false,modalParentId:null})">
+        <div class="modal">
+          <h2>${state.modalParentId?'Add subtask':'Add task'}</h2>
+          ${renderForm({initial:{domain:state.activeDomain},parentId:state.modalParentId,isEdit:false,onSave:'addTask',onCancel:'cancelModal'})}
+        </div>
+      </div>`:''}
+
+    ${state.editTask?`
+      <div class="overlay" onclick="if(event.target===this)setState({editTask:null})">
+        <div class="modal">
+          <h2>Edit task</h2>
+          ${renderForm({initial:state.editTask,isEdit:true})}
+        </div>
+      </div>`:''}
+
+    ${state.showMoveModal&&state.moveTaskId?(()=>{
+      const moving=findTask(state.tasks,state.moveTaskId);
+      if(!moving)return'';
+      const allOther=flattenTasks(state.tasks).filter(t=>t.id!==state.moveTaskId&&!findTask(moving.children||[],t.id));
+      return `<div class="overlay" onclick="if(event.target===this)setState({showMoveModal:false,moveTaskId:null})">
+        <div class="modal">
+          <h2>Move "${escHtml(moving.title)}" under…</h2>
+          <div class="form-row">
+            <div class="form-label">New parent task</div>
+            <select id="move-target">
+              <option value="">— Make top-level task —</option>
+              ${allOther.map(t=>{
+                const depth=getTaskDepth(state.tasks,t.id);
+                const indent='    '.repeat(depth);
+                return `<option value="${t.id}">${indent}${escHtml(t.title)} (${t.domain})</option>`;
+              }).join('')}
+            </select>
+          </div>
+          <div class="btn-row">
+            <button onclick="setState({showMoveModal:false,moveTaskId:null})">Cancel</button>
+            <button class="primary" onclick="window._confirmMove()">Move task</button>
+          </div>
+        </div>
+      </div>`;
+    })():''}
+  `;
+
+  // Save scroll positions before re-render
+  const treeEl=document.getElementById('task-tree');
+  const savedTreeScroll=treeEl?treeEl.scrollTop:0;
+  const settingsEl=document.getElementById('settings-panel');
+  const savedSettingsScroll=settingsEl?settingsEl.scrollTop:0;
+  const opEl=document.getElementById('op-mode');
+  const savedOpScroll=opEl?opEl.scrollTop:0;
+  const archiveEl=document.querySelector('[id="archive-panel"]');
+  const savedArchiveScroll=archiveEl?archiveEl.scrollTop:0;
+
+  document.getElementById('app').innerHTML=html;
+
+  // Restore scroll positions after re-render
+  const newTreeEl=document.getElementById('task-tree');
+  if(newTreeEl&&savedTreeScroll)newTreeEl.scrollTop=savedTreeScroll;
+  const newSettingsEl=document.getElementById('settings-panel');
+  if(newSettingsEl&&savedSettingsScroll)newSettingsEl.scrollTop=savedSettingsScroll;
+  const newOpEl=document.getElementById('op-mode');
+  if(newOpEl&&savedOpScroll)newOpEl.scrollTop=savedOpScroll;
+
+  // Auto-focus title field and wire Enter/Esc when a modal is open
+  if(state.showModal||state.editTask){
+    requestAnimationFrame(()=>{
+      const el=document.getElementById('f-title');
+      if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}
+    });
+    // Remove any previous listener before adding a new one
+    if(window._modalKeyHandler)document.removeEventListener('keydown',window._modalKeyHandler);
+    window._modalKeyHandler=function(e){
+      // Don't intercept Enter inside textareas — let user add newlines
+      if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){
+        e.preventDefault();
+        window._formSave();
+      } else if(e.key==='Escape'){
+        e.preventDefault();
+        window._formCancel();
+      }
+    };
+    document.addEventListener('keydown',window._modalKeyHandler);
+  } else {
+    // No modal open — remove listener
+    if(window._modalKeyHandler){
+      document.removeEventListener('keydown',window._modalKeyHandler);
+      window._modalKeyHandler=null;
+    }
+  }
+}
+
+// ── Pointer-based reorder ─────────────────────────────────────────────────
+let _pd={id:null,siblings:null,insertIdx:null};
+
+function _getSiblings(id){
+  const parent=findParent(state.tasks,id);
+  if(parent){
+    const p=findTask(state.tasks,parent.id);
+    return(p?.children||[]).sort((a,b)=>(a.rank||99)-(b.rank||99));
+  }
+  const domain=findTask(state.tasks,id)?.domain||state.activeDomain;
+  return state.tasks.filter(t=>t.domain===domain).sort((a,b)=>(a.rank||99)-(b.rank||99));
+}
+
+function _getNodeRow(id){
+  const wrapper=document.getElementById('node-'+id);
+  return wrapper?wrapper.querySelector('.task-row'):null;
+}
+
+function _ensureGhost(){
+  let g=document.getElementById('drag-ghost');
+  if(!g){g=document.createElement('div');g.id='drag-ghost';document.body.appendChild(g);}
+  let l=document.getElementById('drag-line');
+  if(!l){l=document.createElement('div');l.id='drag-line';document.body.appendChild(l);}
+  return{g,l};
+}
+
+function _updateLine(insertIdx,siblings){
+  const {l}=_ensureGhost();
+  if(insertIdx===null||!siblings.length){l.style.display='none';return;}
+  // Line appears above the item at insertIdx, or below the last item
+  let refId=insertIdx<siblings.length?siblings[insertIdx].id:siblings[siblings.length-1].id;
+  let refRow=_getNodeRow(refId);
+  if(!refRow){l.style.display='none';return;}
+  const rect=refRow.getBoundingClientRect();
+  const treeEl=document.getElementById('task-tree');
+  const treeRect=treeEl?treeEl.getBoundingClientRect():{left:0,right:window.innerWidth};
+  l.style.display='block';
+  l.style.top=(insertIdx<siblings.length?rect.top-1:rect.bottom+1)+'px';
+  l.style.left=treeRect.left+'px';
+  l.style.width=(treeRect.right-treeRect.left)+'px';
+}
+
+window._dragPointerDown=function(e,id){
+  e.preventDefault();
+  const siblings=_getSiblings(id);
+  if(siblings.length<2)return; // nothing to reorder
+  _pd={id,siblings,insertIdx:null};
+
+  const task=findTask(state.tasks,id);
+  const {g,l}=_ensureGhost();
+  g.textContent=task?task.title:'';
+  g.style.display='block';
+  g.style.left=e.clientX+14+'px';
+  g.style.top=e.clientY-14+'px';
+
+  // Dim the source row
+  const srcRow=_getNodeRow(id);
+  if(srcRow)srcRow.classList.add('drag-source');
+
+  function onMove(ev){
+    g.style.left=ev.clientX+14+'px';
+    g.style.top=ev.clientY-14+'px';
+
+    // Work entirely in terms of the "others" list (siblings minus dragged item)
+    // so the line position and the drop index are always in sync
+    const others=siblings.filter(s=>s.id!==id);
+    let insertIdx=others.length; // default: after last
+    for(let i=0;i<others.length;i++){
+      const row=_getNodeRow(others[i].id);
+      if(!row)continue;
+      const rect=row.getBoundingClientRect();
+      if(ev.clientY<rect.top+rect.height/2){insertIdx=i;break;}
+    }
+    _pd.insertIdx=insertIdx;
+    _updateLine(insertIdx,others);
+  }
+
+  function onUp(){
+    g.style.display='none';
+    l.style.display='none';
+    if(srcRow)srcRow.classList.remove('drag-source');
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+
+    const{id:dragId,siblings:sibs,insertIdx}=_pd;
+    _pd={id:null,siblings:null,insertIdx:null};
+    if(insertIdx===null)return;
+
+    const others=sibs.filter(s=>s.id!==dragId);
+    const dragOrigIdx=sibs.findIndex(s=>s.id===dragId);
+    // Convert others-based insertIdx back to full-siblings index to detect no-op
+    const insertBeforeId=insertIdx<others.length?others[insertIdx].id:null;
+    const fullInsertIdx=insertBeforeId?sibs.findIndex(s=>s.id===insertBeforeId):sibs.length;
+    if(fullInsertIdx===dragOrigIdx||fullInsertIdx===dragOrigIdx+1)return; // no change
+
+    // Build new order: insert dragged item at insertIdx in others list
+    const newOrder=[...others];
+    newOrder.splice(insertIdx,0,sibs[dragOrigIdx]);
+    let tasks=state.tasks;
+    newOrder.forEach((t,i)=>{tasks=updateTask(tasks,t.id,{rank:i+1});});
+    saveTasks(tasks);
+    setState({tasks});
+  }
+
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
+};
+
+function applyPlaceAfter(taskId,placeAfterVal){
+  if(!placeAfterVal||placeAfterVal==='last'&&!true)return;
+  const parent=findParent(state.tasks,taskId);
+  let siblings;
+  if(parent){
+    const p=findTask(state.tasks,parent.id);
+    siblings=(p?.children||[]).sort((a,b)=>(a.rank||99)-(b.rank||99));
+  } else {
+    const domain=findTask(state.tasks,taskId)?.domain||state.activeDomain;
+    siblings=state.tasks.filter(t=>t.domain===domain).sort((a,b)=>(a.rank||99)-(b.rank||99));
+  }
+  const others=siblings.filter(s=>s.id!==taskId);
+  const dragOrigIdx=siblings.findIndex(s=>s.id===taskId);
+  let insertIdx;
+  if(placeAfterVal==='first'){
+    insertIdx=0;
+  } else if(placeAfterVal==='last'){
+    insertIdx=others.length;
+  } else {
+    const afterIdx=others.findIndex(s=>s.id===placeAfterVal);
+    insertIdx=afterIdx===-1?others.length:afterIdx+1;
+  }
+  // No change if already in that position
+  if(insertIdx===dragOrigIdx||insertIdx===dragOrigIdx+1)return;
+  const newOrder=[...others];
+  newOrder.splice(insertIdx,0,siblings[dragOrigIdx]);
+  let tasks=state.tasks;
+  newOrder.forEach((t,i)=>{tasks=updateTask(tasks,t.id,{rank:i+1});});
+  saveTasks(tasks);
+  setState({tasks});
+}
+
+function scrollToTask(id){
+  // Try immediately, then retry after a short delay to catch post-reparent renders
+  const attempt=(tries)=>{
+    const el=document.getElementById('node-'+id);
+    if(el){el.scrollIntoView({behavior:'smooth',block:'nearest'});return;}
+    if(tries>0)setTimeout(()=>attempt(tries-1),80);
+  };
+  requestAnimationFrame(()=>attempt(5));
+}
+
+// ── Global handlers ────────────────────────────────────────────────────────
+window._switchToOp=function(){
+  // Only auto-run if not already showing results; preserve current domain
+  if(state.mode==='op'&&state.opResults)return setState({mode:'op'});
+  state={...state,mode:'op',opResults:null,opChosen:null,opLoading:false,opDismissed:new Set()};
+  render();
+  const flat=flattenTasks(state.tasks);
+  const hasActionable=flat.some(t=>t.state==='actionable'||(t.state==='waiting'&&isOverdue(t.waitingBy)));
+  if(hasActionable)window._runOp();
+};
+
+window._toggleExpand=function(id){
+  if(expandedSet.has(id))expandedSet.delete(id);else expandedSet.add(id);
+  render();
+};
+// Collect all descendant ids of a task
+function getAllDescendantIds(task){
+  const ids=[];
+  (task.children||[]).forEach(c=>{ids.push(c.id);ids.push(...getAllDescendantIds(c));});
+  return ids;
+}
+window._expandAllTop=function(domain){
+  state.tasks.filter(t=>t.domain===domain).forEach(t=>{
+    expandedSet.add(t.id);
+    getAllDescendantIds(t).forEach(did=>expandedSet.add(did));
+  });
+  render();
+};
+window._collapseAllTop=function(domain){
+  state.tasks.filter(t=>t.domain===domain).forEach(t=>{
+    expandedSet.delete(t.id);
+    getAllDescendantIds(t).forEach(did=>expandedSet.delete(did));
+  });
+  render();
+};
+window._expandAll=function(id){
+  const task=findTask(state.tasks,id);
+  if(!task)return;
+  expandedSet.add(id);
+  getAllDescendantIds(task).forEach(did=>expandedSet.add(did));
+  render();
+};
+window._collapseAll=function(id){
+  const task=findTask(state.tasks,id);
+  if(!task)return;
+  expandedSet.delete(id);
+  getAllDescendantIds(task).forEach(did=>expandedSet.delete(did));
+  render();
+};
+window._toggleArchiveExpand=function(id){
+  if(archiveExpandedSet.has(id))archiveExpandedSet.delete(id);else archiveExpandedSet.add(id);
+  render();
+};
+window._rerank=function(id,dir){rerankFn(id,dir);};
+window._addChild=function(pid){expandedSet.add(pid);setState({showModal:true,modalParentId:pid});};
+window._editTask=function(id){
+  const t=findTask(state.tasks,id);
+  if(t)setState({editTask:t});
+};
+window._deleteTask=function(id){deleteTaskFn(id);};
+window._confirmDelete=function(id){setState({confirmDeleteId:id});};
+window._cycleState=function(id){
+  const task=findTask(state.tasks,id);
+  if(!task)return;
+  // Cycle: not-actionable → actionable → waiting → not-actionable
+  const cycle={'not-actionable':'actionable','actionable':'waiting','waiting':'not-actionable'};
+  const next=cycle[task.state]||'actionable';
+  const updates={state:next};
+  if(next==='waiting'&&!task.duration)updates.duration='< 5 min';
+  const tasks=updateTask(state.tasks,id,updates);
+  saveTasks(tasks);
+  setState({tasks});
+};
+window._moveTask=function(id){setState({showMoveModal:true,moveTaskId:id});};
+window._closeTop=function(id){
+  if(state.closeBlockedId&&state.closeBlockedId!==id)setState({closeBlockedId:null,closeBlockedCount:0});
+  closeTopLevelTask(id);
+};
+window._clearCloseBlock=function(){setState({closeBlockedId:null,closeBlockedCount:0});};
+window._toggleSubClosed=function(id){toggleSubtaskClosed(id);};
+window._restoreArchived=function(id){
+  const task=state.archive.find(t=>t.id===id);
+  if(!task)return;
+  const archive=state.archive.filter(t=>t.id!==id);
+  const restored={...task};
+  delete restored.closedAt;
+  restored.rank=state.tasks.filter(t=>t.domain===task.domain).length+1;
+  const tasks=[...state.tasks,restored];
+  saveTasks(tasks);saveArchive(archive);
+  setState({tasks,archive});
+};
+window._deleteArchived=function(id){
+  const archive=state.archive.filter(t=>t.id!==id);
+  saveArchive(archive);
+  setState({archive});
+};
+window._confirmMove=function(){
+  const target=document.getElementById('move-target')?.value||'';
+  if(state.moveTaskId)reparentFn(state.moveTaskId,target||null);
+};
+
+window._formSave=function(){
+  const g=id=>document.getElementById(id)?.value||'';
+  const stateVal=g('f-state')||'not-actionable';
+  const notes=stateVal==='actionable'?g('f-notes-actionable'):stateVal==='not-actionable'?g('f-notes-na'):'';
+  const parentVal=g('f-parent');
+  const effectiveParentId=parentVal||state.modalParentId||null;
+  const placeAfterVal=g('f-placeafter');
+  const form={
+    title:g('f-title'),
+    domain:g('f-domain')||state.activeDomain,
+    state:stateVal,
+    duration:g('f-duration'),
+    dueDate:(stateVal==='not-actionable'?g('f-dueDate-na'):stateVal==='waiting'?g('f-dueDate-waiting'):g('f-dueDate')),
+    waitingWho:g('f-waitingWho'),
+    waitingBy:(stateVal==='waiting'?g('f-dueDate-waiting'):''),
+    notes,
+  };
+  if(!form.title.trim())return;
+  if(state.editTask){
+    const taskId=state.editTask.id;
+    const currentParent=findParent(state.tasks,taskId);
+    const currentParentId=currentParent?currentParent.id:null;
+    const newParentId=parentVal||null;
+    editTaskFn(taskId,form);
+    if(newParentId!==currentParentId){
+      setTimeout(()=>{
+        reparentFn(taskId,newParentId);
+        // Apply place-after after reparent settles
+        if(placeAfterVal)setTimeout(()=>applyPlaceAfter(taskId,placeAfterVal),0);
+        scrollToTask(taskId);
+      },0);
+    } else {
+      if(placeAfterVal)applyPlaceAfter(taskId,placeAfterVal);
+      scrollToTask(taskId);
+    }
+  } else {
+    addTask(form,effectiveParentId,placeAfterVal);
+  }
+};
+window._formCancel=function(){
+  setState({showModal:false,modalParentId:null,editTask:null});
+};
+
+// Check entered due date against parent constraint
+window._checkDueDate=function(input){
+  const parentId=document.getElementById('f-parent')?.value||state.modalParentId||null;
+  const editId=state.editTask?.id||null;
+  // Find effective parent
+  let parentTask=null;
+  if(editId){
+    const p=findParent(state.tasks,editId);
+    if(p)parentTask=p;
+  } else if(parentId){
+    parentTask=findTask(state.tasks,parentId);
+  }
+  if(!parentTask||!parentTask.dueDate)return;
+  if(input.value&&input.value>parentTask.dueDate){
+    const warn=document.getElementById('f-due-warn');
+    if(warn){warn.textContent=`Due date cannot be after the due date of the parent task (${parentTask.dueDate}).`;warn.style.display='block';}
+    input.value=parentTask.dueDate;
+    setTimeout(()=>{if(warn)warn.style.display='none';},3000);
+  }
+};
+
+// Propagate a due date down through all descendants recursively
+// Only updates children with no due date, or a due date after the parent's
+function propagateDueDates(tasks,taskId,dueDate){
+  const task=findTask(tasks,taskId);
+  if(!task||!task.children?.length)return tasks;
+  for(const child of task.children){
+    const childDue=child.dueDate;
+    if(!childDue||childDue>dueDate){
+      tasks=updateTask(tasks,child.id,{dueDate});
+    }
+    tasks=propagateDueDates(tasks,child.id,
+      // pass the child's effective due date down (min of child and parent)
+      (!childDue||childDue>dueDate)?dueDate:childDue
+    );
+  }
+  return tasks;
+}
+
+window._opDone=function(taskId){
+  const task=findTask(state.tasks,taskId);
+  if(!task)return;
+  const isTopLevel=!findParent(state.tasks,taskId);
+  // For top-level tasks: close (if no open subtasks), else just dismiss from view
+  // For subtasks: toggle closed
+  const newDismissed=new Set(state.opDismissed);
+  newDismissed.add(taskId);
+  if(isTopLevel){
+    const openCount=countOpenSubtasks(task);
+    if(openCount===0){
+      // Archive it
+      const archived={...task,closedAt:new Date().toISOString()};
+      const archive=[...state.archive,archived];
+      let tasks=state.tasks.filter(t=>t.id!==taskId);
+      const tops=tasks.filter(t=>t.domain===task.domain).sort((a,b)=>(a.rank||99)-(b.rank||99));
+      tops.forEach((t,i)=>{tasks=updateTask(tasks,t.id,{rank:i+1});});
+      saveTasks(tasks);saveArchive(archive);
+      state={...state,tasks,archive,opDismissed:newDismissed};
+    } else {
+      state={...state,opDismissed:newDismissed};
+    }
+  } else {
+    // Mark subtask closed
+    let tasks=updateTask(state.tasks,taskId,{closed:true});
+    saveTasks(tasks);
+    state={...state,tasks,opDismissed:newDismissed};
+  }
+  // If all visible results are now dismissed, auto re-run
+  const stillVisible=(state.opResults||[]).filter(r=>!state.opDismissed.has(r.task.id));
+  if(stillVisible.length===0){
+    render();
+    setTimeout(()=>window._runOp(),600);
+  } else {
+    render();
+  }
+};
+
+window._gdriveConnect=function(){gdriveConnect();};
+window._gdriveDisconnect=function(){gdriveDisconnect();render();};
+window._gdriveSync=async function(){
+  const data=await gdriveRead();
+  if(data&&data.tasks){
+    saveTasks(data.tasks);saveArchive(data.archive||[]);
+    state.tasks=data.tasks;state.archive=data.archive||[];
+    state.tasks.forEach(t=>expandedSet.add(t.id));
+    setState({tasks:state.tasks,archive:state.archive});
+  }
+};
+
+window._saveSetting=function(key,val){
+  const settings={...state.settings,[key]:val};
+  saveSettings(settings);
+  setState({settings});
+};
+// Debounced version for sliders — updates state only after dragging stops
+const _saveSettingDebounceTimers={};
+window._saveSettingDebounced=function(key,val,delayMs){
+  state.settings={...state.settings,[key]:val};
+  saveSettings(state.settings);
+  clearTimeout(_saveSettingDebounceTimers[key]);
+  _saveSettingDebounceTimers[key]=setTimeout(()=>{
+    setState({settings:state.settings});
+  },delayMs||300);
+};
+window._toggleWorkDay=function(day){
+  const days=state.settings.workDays.includes(day)
+    ?state.settings.workDays.filter(d=>d!==day)
+    :[...state.settings.workDays,day];
+  window._saveSetting('workDays',days);
+};
+
+window._runOp=async function(){
+  const flat=flattenTasks(state.tasks);
+  const cs=state.settings;
+  // Build priority percentile map per domain for minimum priority % check
+  // rankPctMap: stores (rank / total * 100) for each top-level task
+  // rank 1 of 10 → 10% (top 10%), rank 1 of 1 → 100% (top 100%), rank 5 of 10 → 50%
+  // A task qualifies for threshold T if its rankPct <= T
+  // e.g. threshold=10: only rank 1 of 10 qualifies (10% <= 10%) ✓
+  //      threshold=100: all tasks qualify ✓
+  //      1 task total: rankPct=100, always <= any threshold ✓
+  const domainRankMap={};
+  ['work','personal'].forEach(d=>{
+    const tops=state.tasks.filter(t=>t.domain===d).sort((a,b)=>(a.rank||99)-(b.rank||99));
+    const total=tops.length;
+    tops.forEach((t,i)=>{domainRankMap[t.id]=total>0?Math.round(((i+1)/total)*100):100;});
+  });
+  function getCrossRankPct(taskId){
+    const top=getTopAncestor(state.tasks,taskId)||findTask(state.tasks,taskId);
+    return top?(domainRankMap[top.id]||100):100;
+  }
+  function crossDomainQualifies(t){
+    if(!cs.crossDomainBleed)return false;
+    if(t.domain===state.opDomain)return false;
+    // Due date threshold
+    const due=t.dueDate||t.waitingBy;
+    if(!due)return false;
+    const daysUntil=Math.floor((new Date(due)-new Date())/(86400000));
+    if(daysUntil>cs.crossDomainDaysUntilDue)return false;
+    // Actionability threshold
+    if(t.state==='waiting'&&!cs.crossDomainIncludeWaiting)return false;
+    if(t.state!=='actionable'&&t.state!=='waiting')return false;
+    // Priority percentile: task qualifies if rank/total*100 <= threshold
+    // Special case: if only 1 task exists in domain, it always qualifies (it IS the top priority)
+    const pct=getCrossRankPct(t.id);
+    const domainTotal=state.tasks.filter(dt=>dt.domain===t.domain).length;
+    if(domainTotal>1&&pct>cs.crossDomainMinPriorityPct)return false;
+    // Duration cap
+    if(cs.crossDomainDurationCap&&t.duration){
+      const capMins=durationToMins(cs.crossDomainDurationCap);
+      const taskMins=durationToMins(t.duration);
+      if(capMins&&taskMins&&taskMins>capMins)return false;
+    }
+    return true;
+  }
+  const candidates=flat.filter(t=>{
+    if(t.closed)return false;
+    if(t.state==='not-actionable')return false;
+    if(t.domain===state.opDomain&&t.state==='actionable')return true;
+    if(t.domain===state.opDomain&&t.state==='waiting')return true;
+    if(crossDomainQualifies(t))return true;
+    return false;
+  });
+  // Deduplicate by id in case a task appears via multiple paths
+  const seenIds=new Set();
+  const uniqueCandidates=candidates.filter(t=>{if(seenIds.has(t.id))return false;seenIds.add(t.id);return true;});
+  if(!uniqueCandidates.length){alert('No actionable tasks found. Add some in Organize mode.');return;}
+  setState({opLoading:true,opResults:null,opChosen:null});
+  try{
+    const results=await getAIRecommendations(uniqueCandidates,state.tasks,state.opDomain,state.opAvail);
+    const seenResultIds=new Set();
+    let dedupedResults=results.filter(r=>{if(!r.task||seenResultIds.has(r.task.id))return false;seenResultIds.add(r.task.id);return true;});
+    // Pad to 5 if AI returned fewer — add highest-scored remaining candidates
+    if(dedupedResults.length<5){
+      const remaining=uniqueCandidates
+        .filter(t=>!seenResultIds.has(t.id))
+        .map(t=>({task:t,score:scoreTaskWithDomain(t,state.tasks,availToMins(state.opAvail),state.opDomain),why:'High priority task.',crossDomain:t.domain!==state.opDomain}))
+        .sort((a,b)=>b.score-a.score);
+      for(const r of remaining){
+        if(dedupedResults.length>=5)break;
+        dedupedResults.push(r);
+      }
+    }
+    setState({opLoading:false,opResults:dedupedResults});
+  }catch(e){
+    // Fallback scoring
+    const scored=uniqueCandidates.map(t=>({task:t,score:scoreTaskWithDomain(t,state.tasks,availToMins(state.opAvail),state.opDomain),why:'Based on priority rank and due date.', crossDomain:t.domain!==state.opDomain}))
+      .sort((a,b)=>b.score-a.score).slice(0,Math.min(5,uniqueCandidates.length));
+    setState({opLoading:false,opResults:scored});
+  }
+};
+
+// ── Init ───────────────────────────────────────────────────────────────────
+// Auto-expand top-level tasks
+state.tasks.forEach(t=>expandedSet.add(t.id));
+// Default both organize and op mode domains based on current work schedule
+const _initDomain=getContextDomain();
+state.activeDomain=_initDomain;
+state.opDomain=_initDomain;
+state.opAvail=state.settings.defaultAvail;
+render();
+
+// Real-time work hours watcher — checks every 60s and auto-switches domain if boundary crossed
+let _lastKnownDomain=_initDomain;
+setInterval(()=>{
+  const current=getContextDomain();
+  if(current!==_lastKnownDomain){
+    _lastKnownDomain=current;
+    // Only auto-switch if user hasn't manually diverged the two domains
+    // (if they match each other, treat as auto-managed)
+    if(state.activeDomain===state.opDomain){
+      state.activeDomain=current;
+      state.opDomain=current;
+      // Clear op results so next What now? reflects new domain
+      state.opResults=null;
+      state.opDismissed=new Set();
+      render();
+    }
+  }
+},60000);
+</script>
+</body>
+</html>
