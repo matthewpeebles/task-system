@@ -262,9 +262,10 @@ async function gdriveAuth(){
   if(!gdrive.clientId){gdrive.error='No client ID set.';gdriveRender();return;}
   gdrive.status='connecting';gdrive.error='';gdriveRender();
   return new Promise((resolve,reject)=>{
+    const redirect_uri='https://matthewpeebles.github.io/task-system/';
     const params=new URLSearchParams({
       client_id:gdrive.clientId,
-      redirect_uri:window.location.href.split('?')[0].split('#')[0],
+      redirect_uri:redirect_uri,
       response_type:'token',
       scope:GDRIVE_SCOPE,
       prompt:'consent',
