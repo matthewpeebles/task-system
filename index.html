@@ -547,7 +547,7 @@ function addTask(form,parentId,placeAfterVal){
   const isTop=!parentId;
   const rank=isTop?state.tasks.filter(t=>t.domain===form.domain).length+1:null;
   const unifiedDate=form.dueDate||form.waitingBy||null;
-  const effectiveDuration=form.duration||(form.state==='waiting'?'< 5 min':null);
+  const effectiveDuration=form.duration||(form.state==='waiting'?'5 min':null);
   const t={id:genId(),title:form.title.trim(),domain:form.domain,state:form.state,
     duration:effectiveDuration,dueDate:unifiedDate,
     waitingWho:form.waitingWho||null,waitingBy:unifiedDate,
@@ -1881,7 +1881,7 @@ window._cycleState=function(id){
   const cycle={'not-actionable':'actionable','actionable':'waiting','waiting':'not-actionable'};
   const next=cycle[task.state]||'actionable';
   const updates={state:next};
-  if(next==='waiting'&&!task.duration)updates.duration='< 5 min';
+  if(next==='waiting'&&!task.duration)updates.duration='5 min';
   const tasks=updateTask(state.tasks,id,updates);
   saveTasks(tasks);
   setState({tasks});
