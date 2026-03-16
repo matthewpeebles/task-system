@@ -79,6 +79,7 @@ textarea{resize:vertical;min-height:64px}
 .b-notactionable{background:var(--red-bg);color:var(--red-text)}
 .b-neutral{background:var(--bg3);color:var(--text2);border:0.5px solid var(--border)}
 .b-overdue{background:var(--red-bg);color:var(--red-text)}
+.b-blocked{background:var(--gray-bg);color:var(--gray-text);border:0.5px solid var(--border2)}
 .task-notes{font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5}
 .task-actions{display:flex;gap:2px;flex-shrink:0;align-items:flex-start}
 .rank-arrows{display:flex;flex-direction:column;gap:1px}
@@ -173,12 +174,22 @@ function getTopAncestor(topTasks,id){
   return null;
 }
 
-const STATE_LABELS={'actionable':'Actionable','waiting':'Waiting','not-actionable':'Not actionable'};
-const STATE_BADGE={'actionable':'b-actionable','waiting':'b-waiting','not-actionable':'b-notactionable'};
-const DURATIONS=['< 5 min','5–15 min','15–30 min','30–60 min','1–2 hrs','2–4 hrs','Half day','Full day'];
+const STATE_LABELS={'actionable':'Actionable','waiting':'Waiting','not-actionable':'Not actionable','blocked':'Blocked'};
+const STATE_BADGE={'actionable':'b-actionable','waiting':'b-waiting','not-actionable':'b-notactionable','blocked':'b-blocked'};
+const DURATIONS=['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'];
 
 function durationToMins(d){
   if(!d)return null;
+  // New fixed values
+  if(d==='5 min')return 5;
+  if(d==='10 min')return 10;
+  if(d==='15 min')return 15;
+  if(d==='30 min')return 30;
+  if(d==='1 hr')return 60;
+  if(d==='2 hr')return 120;
+  if(d==='3 hr')return 180;
+  if(d==='4+ hr')return 240;
+  // Legacy range values — kept for display compatibility with existing data
   if(d.includes('< 5'))return 3;
   if(d.includes('5–15'))return 10;
   if(d.includes('15–30'))return 25;
@@ -607,11 +618,17 @@ function editTaskFn(id,form){
   // Only lock domain if this task actually has a parent
   const hasParent=findParent(state.tasks,id)!=null;
   const effectiveDomain=hasParent?(getTopDomain(state.tasks,id)||form.domain):form.domain;
+  const existingTask=findTask(state.tasks,id);
+  // Capture preBlockedState when transitioning INTO blocked
+  const preBlockedState=(form.state==='blocked'&&existingTask?.state!=='blocked')
+    ?(existingTask?.state||'not-actionable'):existingTask?.preBlockedState||null;
   let tasks=updateTask(state.tasks,id,{
     title:form.title.trim(),domain:effectiveDomain,state:form.state,
     duration:form.duration||null,dueDate:form.dueDate||form.waitingBy||null,
     waitingWho:form.waitingWho||null,waitingBy:form.dueDate||form.waitingBy||null,
     notes:form.notes||'',
+    blockedBy:form.state==='blocked'?(form.blockedBy||null):null,
+    preBlockedState:form.state==='blocked'?preBlockedState:null,
   });
   // Propagate updated due date down to children
   if(form.dueDate)tasks=propagateDueDates(tasks,id,form.dueDate);
@@ -644,9 +661,9 @@ function hasWaitingDescendant(task){
   return(task.children||[]).some(c=>hasWaitingDescendant(c));
 }
 function needsDefinition(task){
-  // A task needs definition if: not closed, not actionable/waiting, and no open actionable/waiting descendant
+  // A task needs definition if: not closed, not blocked, not actionable/waiting, and no open actionable/waiting descendant
   if(task.closed)return false;
-  if(task.state==='actionable'||task.state==='waiting')return false;
+  if(task.state==='actionable'||task.state==='waiting'||task.state==='blocked')return false;
   return!hasActionableDescendant(task);
 }
 function hasNeedsDefinitionDescendant(task){
@@ -701,6 +718,7 @@ function closeTopLevelTask(id){
   // Re-rank remaining in this domain
   const tops=tasks.filter(t=>t.domain===task.domain).sort((a,b)=>(a.rank||99)-(b.rank||99));
   tops.forEach((t,i)=>{tasks=updateTask(tasks,t.id,{rank:i+1});});
+  tasks=unblockDependents(tasks,id);
   saveTasks(tasks);
   saveArchive(archive);
   setState({tasks,archive});
@@ -718,7 +736,8 @@ function toggleSubtaskClosed(id){
       return;
     }
     setState({closeBlockedId:null,closeBlockedCount:0});
-    const tasks=updateTask(state.tasks,id,{closed:true});
+    let tasks=updateTask(state.tasks,id,{closed:true});
+    tasks=unblockDependents(tasks,id);
     saveTasks(tasks);
     setState({tasks});
   } else {
@@ -730,6 +749,43 @@ function toggleSubtaskClosed(id){
     saveTasks(tasks);
     setState({tasks});
   }
+}
+
+// When a task is completed (closed or archived), unblock any tasks blocked by it
+function unblockDependents(tasks,completedId){
+  return tasks.map(t=>{
+    let updated=t;
+    if(t.blockedBy===completedId){
+      updated={...t,state:t.preBlockedState||'not-actionable',blockedBy:null,preBlockedState:null};
+    }
+    if(updated.children?.length){
+      updated={...updated,children:unblockDependents(updated.children,completedId)};
+    }
+    return updated;
+  });
+}
+
+// Validate blocker: same domain, not ancestor/descendant
+function blockerIsValid(tasks,taskId,blockerId){
+  if(!blockerId||taskId===blockerId)return false;
+  const task=findTask(tasks,taskId);
+  const blocker=findTask(tasks,blockerId);
+  if(!task||!blocker)return false;
+  if(task.domain!==blocker.domain)return'cross-domain';
+  // Check not ancestor
+  if(findTask(task.children||[],blockerId))return'descendant';
+  // Check not descendant
+  if(findTask(blocker.children||[],taskId))return'ancestor';
+  // Check circular: would blockerId end up depending on taskId?
+  const allBlockers=(id,visited=new Set())=>{
+    if(visited.has(id))return visited;
+    visited.add(id);
+    const t=findTask(tasks,id);
+    if(t?.blockedBy)allBlockers(t.blockedBy,visited);
+    return visited;
+  };
+  if(allBlockers(blockerId).has(taskId))return'circular';
+  return true;
 }
 
 function rerankFn(id,dir){
@@ -829,6 +885,7 @@ function renderForm(opts){
             <option value="actionable" ${stateVal==='actionable'?'selected':''}>Actionable</option>
             <option value="waiting" ${stateVal==='waiting'?'selected':''}>Waiting</option>
             <option value="not-actionable" ${stateVal==='not-actionable'?'selected':''}>Not actionable</option>
+            <option value="blocked" ${stateVal==='blocked'?'selected':''}>Blocked</option>
           </select>
         </div>
       </div>
@@ -924,6 +981,26 @@ function renderForm(opts){
         </div>
       </div>
 
+      <div id="f-section-blocked" style="display:${stateVal==='blocked'?'block':'none'}">
+        <div class="form-row">
+          <div class="form-label">Blocked by</div>
+          <select id="f-blockedby">
+            <option value="">— Select blocking task —</option>
+            ${flattenTasks(state.tasks).filter(t=>{
+              if(t.id===(initial.id||''))return false;
+              if(t.state==='blocked')return false;
+              const task=findTask(state.tasks,initial.id||'');
+              if(!task)return true;
+              if(t.domain!==task.domain)return false;
+              if(findTask(task.children||[],t.id))return false;
+              if(findTask(t.children||[],task.id||''))return false;
+              return true;
+            }).map(t=>`<option value="${t.id}" ${initial.blockedBy===t.id?'selected':''}>${getRankLabel(state.tasks,t.id)} ${escHtml(t.title)}</option>`).join('')}
+          </select>
+          <div id="f-blocker-warn" style="display:none;font-size:11px;color:var(--red-text);margin-top:4px"></div>
+        </div>
+      </div>
+
       <div id="f-due-warn" style="display:none;font-size:11px;color:var(--amber-text);margin-bottom:8px;line-height:1.5"></div>
       <div class="btn-row">
         <button onclick="window._formCancel()">Cancel</button>
@@ -936,6 +1013,8 @@ window._formStateChange=function(val){
   document.getElementById('f-section-actionable').style.display=val==='actionable'?'block':'none';
   document.getElementById('f-section-waiting').style.display=val==='waiting'?'block':'none';
   document.getElementById('f-section-notactionable').style.display=val==='not-actionable'?'block':'none';
+  const blockedEl=document.getElementById('f-section-blocked');
+  if(blockedEl)blockedEl.style.display=val==='blocked'?'block':'none';
 };
 
 // Dedup: runs on every keystroke with 400ms debounce, updates div in-place — no re-render.
@@ -982,6 +1061,14 @@ function renderTaskNode(task,isTop,expanded,dimmed){
         </div>
         ${task.notes?`<div class="task-notes">${escHtml(task.notes.slice(0,120))}${task.notes.length>120?'…':''}</div>`:''}
         ${state.closeBlockedId===task.id?`<div style="font-size:11px;color:var(--amber-text);margin-top:4px;line-height:1.5">Close all open subtasks (${state.closeBlockedCount}) before closing this task.</div>`:''}
+        ${task.state==='blocked'&&task.blockedBy?(()=>{
+          const blocker=findTask(state.tasks,task.blockedBy);
+          return blocker?`<div style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:4px">
+            <span style="opacity:0.5">🔒</span>
+            <span style="color:var(--text3)">Blocked by </span>
+            <span onclick="event.stopPropagation();scrollToTask('${blocker.id}')" style="color:var(--blue-text);cursor:pointer;text-decoration:underline;text-underline-offset:2px">${escHtml(blocker.title)}</span>
+          </div>`:'<div style="font-size:11px;color:var(--text3);margin-top:4px">🔒 Blocked (blocker not found)</div>';
+        })():''}
       </div>
       <div class="task-actions" onclick="event.stopPropagation()">
         <div class="rank-arrows"><button class="rank-arrow" onclick="window._rerank('${task.id}','up')">▲</button><button class="rank-arrow" onclick="window._rerank('${task.id}','down')">▼</button></div>
@@ -1013,7 +1100,7 @@ function taskSelfMatches(task,filter){
   if(!filter)return true;
   if(filter==='actionable')return task.state==='actionable';
   if(filter==='waiting')return task.state==='waiting';
-  if(filter==='needs-definition')return needsDefinition(task);
+  if(filter==='needs-definition')return needsDefinition(task)&&task.state!=='blocked';
   return true;
 }
 // Does this task or any descendant match the filter?
@@ -1033,7 +1120,7 @@ function renderTree(tasks,depth,expandedSet,filter){
     const exp=expandedSet.has(t.id);
     // Rule 1: undimmed if task itself matches. Rule 2: dimmed if it doesn't but tree does.
     // Opacity is applied only to the task row, NOT the wrapper, so children render independently.
-    const dimmed=filter&&!taskSelfMatches(t,filter);
+    const dimmed=(filter&&!taskSelfMatches(t,filter))||(!filter&&t.state==='blocked');
     let html=`<div id="node-${t.id}">${renderTaskNode(t,isTop,exp,dimmed)}`;
     if(t.children?.length&&exp){
       html+=`<div class="tree-children">${renderTree(t.children,depth+1,expandedSet,filter)}</div>`;
@@ -1789,7 +1876,8 @@ window._confirmDelete=function(id){setState({confirmDeleteId:id});};
 window._cycleState=function(id){
   const task=findTask(state.tasks,id);
   if(!task)return;
-  // Cycle: not-actionable → actionable → waiting → not-actionable
+  // Cycle: not-actionable → actionable → waiting → not-actionable (skip blocked)
+  if(task.state==='blocked')return; // blocked only changeable via edit form
   const cycle={'not-actionable':'actionable','actionable':'waiting','waiting':'not-actionable'};
   const next=cycle[task.state]||'actionable';
   const updates={state:next};
@@ -1830,6 +1918,20 @@ window._formSave=function(){
   const g=id=>document.getElementById(id)?.value||'';
   const stateVal=g('f-state')||'not-actionable';
   const notes=stateVal==='actionable'?g('f-notes-actionable'):stateVal==='not-actionable'?g('f-notes-na'):'';
+  const blockerId=stateVal==='blocked'?(g('f-blockedby')||null):null;
+  // Validate blocker if setting to blocked
+  if(stateVal==='blocked'&&blockerId){
+    const taskId=state.editTask?.id||null;
+    if(taskId){
+      const valid=blockerIsValid(state.tasks,taskId,blockerId);
+      if(valid!==true){
+        const warn=document.getElementById('f-blocker-warn');
+        const msgs={circular:'Circular dependency detected.','cross-domain':'Blockers must be in the same domain.','descendant':'A task cannot be blocked by its own subtask.','ancestor':'A task cannot be blocked by its own parent.'};
+        if(warn){warn.textContent=msgs[valid]||'Invalid blocker.';warn.style.display='block';}
+        return;
+      }
+    }
+  }
   const parentVal=g('f-parent');
   const effectiveParentId=parentVal||state.modalParentId||null;
   const placeAfterVal=g('f-placeafter');
@@ -1842,6 +1944,7 @@ window._formSave=function(){
     waitingWho:g('f-waitingWho'),
     waitingBy:(stateVal==='waiting'?g('f-dueDate-waiting'):''),
     notes,
+    blockedBy:blockerId,
   };
   if(!form.title.trim())return;
   if(state.editTask){
@@ -1925,6 +2028,7 @@ window._opDone=function(taskId){
       let tasks=state.tasks.filter(t=>t.id!==taskId);
       const tops=tasks.filter(t=>t.domain===task.domain).sort((a,b)=>(a.rank||99)-(b.rank||99));
       tops.forEach((t,i)=>{tasks=updateTask(tasks,t.id,{rank:i+1});});
+      tasks=unblockDependents(tasks,taskId);
       saveTasks(tasks);saveArchive(archive);
       state={...state,tasks,archive,opDismissed:newDismissed};
     } else {
@@ -2027,6 +2131,7 @@ window._runOp=async function(){
   const candidates=flat.filter(t=>{
     if(t.closed)return false;
     if(t.state==='not-actionable')return false;
+    if(t.state==='blocked')return false;
     if(t.domain===state.opDomain&&t.state==='actionable')return true;
     if(t.domain===state.opDomain&&t.state==='waiting')return true;
     if(crossDomainQualifies(t))return true;
