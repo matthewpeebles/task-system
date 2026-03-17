@@ -230,6 +230,7 @@ let gdrive={
   status:'disconnected', // 'disconnected'|'connecting'|'connected'|'syncing'|'error'
   error:'',
   lastSync:null,
+  showReconnectBanner:false,
 };
 
 function gdriveRender(){
@@ -459,7 +460,7 @@ async function gdriveConnect(){
       await gdriveWrite({tasks:mergedTasks,archive:mergedArchive});
       setState({tasks:mergedTasks,archive:mergedArchive});
     }
-    gdrive.status='connected';gdrive.error='';
+    gdrive.status='connected';gdrive.error='';gdrive.showReconnectBanner=false;
     gdriveRender();
   }catch(e){
     gdrive.status='disconnected';
@@ -1571,6 +1572,14 @@ function render(){
         </div>
       </div>
 
+      ${gdrive.clientId&&!gdrive.token&&gdrive.showReconnectBanner?`
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--amber-text)">
+          <span>Not connected to Google Drive — changes won't sync until reconnected.</span>
+          <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
+            <button onclick="window._gdriveConnect()" style="font-size:12px;padding:3px 10px;color:var(--amber-text);border-color:var(--amber-border);background:transparent">Connect</button>
+            <button onclick="gdrive.showReconnectBanner=false;gdriveRender()" style="font-size:12px;padding:3px 8px;color:var(--amber-text);border-color:transparent;background:transparent">✕</button>
+          </div>
+        </div>`:''}
       ${overdueWaiting.length>0?`<div class="overdue-banner">⚠ ${overdueWaiting.length} overdue waiting item${overdueWaiting.length>1?'s':''}: ${overdueWaiting.map(t=>escHtml(t.title)+(t.dueDate?' (by '+fmtDate(t.dueDate)+')':'')).join(', ')} — time to follow up.</div>`:''}
 
       ${state.mode==='org'?`
@@ -2233,6 +2242,20 @@ state.activeDomain=_initDomain;
 state.opDomain=_initDomain;
 state.opAvail=state.settings.defaultAvail;
 render();
+
+// ── Visibility-based sync ─────────────────────────────────────────────────
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  if(!gdrive.clientId)return; // Drive not configured
+  if(gdrive.token){
+    // Connected — sync silently
+    window._gdriveSync();
+  } else {
+    // Not connected — show reconnect banner
+    gdrive.showReconnectBanner=true;
+    gdriveRender();
+  }
+});
 
 // Real-time work hours watcher — checks every 60s and auto-switches domain if boundary crossed
 let _lastKnownDomain=_initDomain;
