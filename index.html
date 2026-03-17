@@ -1089,7 +1089,7 @@ window._dedupCheck=function(title,isEdit){
 
 // ── Task node ──────────────────────────────────────────────────────────────
 function renderTaskNode(task,isTop,expanded,dimmed){
-  const overdue=task.state==='waiting'&&isOverdue(task.waitingBy);
+  const overdue=task.state==='waiting'&&!task.closed&&isOverdue(task.dueDate||task.waitingBy);
   const dueDateOverdue=task.dueDate&&isOverdue(task.dueDate);
   const hasChildren=task.children?.length>0;
 
@@ -1552,7 +1552,7 @@ function getTopDomain(tasks,id){
 
 function render(){
   const flat=flattenTasks(state.tasks);
-  const overdueWaiting=flat.filter(t=>t.domain===state.activeDomain&&t.state==='waiting'&&isOverdue(t.dueDate||t.waitingBy));
+  const overdueWaiting=flat.filter(t=>t.domain===state.activeDomain&&t.state==='waiting'&&!t.closed&&isOverdue(t.dueDate||t.waitingBy));
   const domainFlat=flattenTasks(state.tasks.filter(t=>t.domain===state.activeDomain));
   const actionableCount=domainFlat.filter(t=>t.state==='actionable'&&!t.closed).length;
   const waitingCount=domainFlat.filter(t=>t.state==='waiting'&&!t.closed).length;
