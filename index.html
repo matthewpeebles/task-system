@@ -385,6 +385,60 @@ function gdriveScheduleWrite(){
   },2000);
 }
 
+// Deep merge two task trees by id, keeping newer updatedAt per task
+// Never deletes — if a task exists on one side only, it's kept
+function mergeTaskTrees(local,remote){
+  // Build flat maps by id
+  const localMap={};const remoteMap={};
+  flattenTasks(local).forEach(t=>{localMap[t.id]=t;});
+  flattenTasks(remote).forEach(t=>{remoteMap[t.id]=t;});
+
+  // Merge a single task: pick newer updatedAt, then recurse children
+  function mergeTask(lt,rt){
+    if(!lt)return rt;
+    if(!rt)return lt;
+    const localTime=lt.updatedAt?new Date(lt.updatedAt).getTime():0;
+    const remoteTime=rt.updatedAt?new Date(rt.updatedAt).getTime():0;
+    // Strictly greater: local wins on tie (including both-zero / no-timestamp case)
+    const base=remoteTime>localTime?{...rt}:{...lt};
+    // Merge children: union of both sides' children
+    const allChildIds=new Set([
+      ...(lt?.children||[]).map(c=>c.id),
+      ...(rt?.children||[]).map(c=>c.id),
+    ]);
+    base.children=[...allChildIds].map(cid=>{
+      const lc=(lt?.children||[]).find(c=>c.id===cid);
+      const rc=(rt?.children||[]).find(c=>c.id===cid);
+      return mergeTask(lc,rc);
+    }).sort((a,b)=>(a.rank||99)-(b.rank||99));
+    return base;
+  }
+
+  // Union of all top-level task ids from both sides
+  const allTopIds=new Set([
+    ...local.map(t=>t.id),
+    ...remote.map(t=>t.id),
+  ]);
+  return [...allTopIds].map(id=>{
+    const lt=local.find(t=>t.id===id);
+    const rt=remote.find(t=>t.id===id);
+    return mergeTask(lt,rt);
+  }).sort((a,b)=>(a.rank||99)-(b.rank||99));
+}
+
+// Merge archive arrays: union by id, keeping newer updatedAt
+function mergeArchives(local,remote){
+  const merged={};
+  [...local,...remote].forEach(t=>{
+    if(!merged[t.id]){merged[t.id]=t;return;}
+    const ex=merged[t.id];
+    const exTime=ex.updatedAt?new Date(ex.updatedAt).getTime():0;
+    const newTime=t.updatedAt?new Date(t.updatedAt).getTime():0;
+    if(newTime>exTime)merged[t.id]=t;
+  });
+  return Object.values(merged);
+}
+
 async function gdriveConnect(){
   try{
     await gdriveAuth();
@@ -392,20 +446,17 @@ async function gdriveConnect(){
     // Read existing data from Drive and merge (Drive wins if it has more recent data)
     const data=await gdriveRead();
     if(data&&data.tasks){
-      const localSaved=parseInt(localStorage.getItem('taskSystem_lastSaved')||'0',10);
-      const driveSaved=data.savedAt?new Date(data.savedAt).getTime():0;
-      if(driveSaved>localSaved){
-        // Drive is newer — load from Drive
-        saveTasks(data.tasks);
-        saveArchive(data.archive||[]);
-        state.tasks=data.tasks;
-        state.archive=data.archive||[];
-        state.tasks.forEach(t=>expandedSet.add(t.id));
-        setState({tasks:state.tasks,archive:state.archive});
-      } else {
-        // Local is newer — push to Drive
-        await gdriveWrite({tasks:state.tasks,archive:state.archive});
-      }
+      // Per-task merge: union both sides keeping newer updatedAt per task
+      const mergedTasks=mergeTaskTrees(state.tasks,data.tasks);
+      const mergedArchive=mergeArchives(state.archive,data.archive||[]);
+      saveTasks(mergedTasks);
+      saveArchive(mergedArchive);
+      state.tasks=mergedTasks;
+      state.archive=mergedArchive;
+      state.tasks.forEach(t=>expandedSet.add(t.id));
+      // Write merged result back to Drive
+      await gdriveWrite({tasks:mergedTasks,archive:mergedArchive});
+      setState({tasks:mergedTasks,archive:mergedArchive});
     }
     gdrive.status='connected';gdrive.error='';
     gdriveRender();
@@ -548,10 +599,11 @@ function addTask(form,parentId,placeAfterVal){
   const rank=isTop?state.tasks.filter(t=>t.domain===form.domain).length+1:null;
   const unifiedDate=form.dueDate||form.waitingBy||null;
   const effectiveDuration=form.duration||(form.state==='waiting'?'5 min':null);
+  const now=new Date().toISOString();
   const t={id:genId(),title:form.title.trim(),domain:form.domain,state:form.state,
     duration:effectiveDuration,dueDate:unifiedDate,
     waitingWho:form.waitingWho||null,waitingBy:unifiedDate,
-    notes:form.notes||'',children:[],rank,createdAt:new Date().toISOString()};
+    notes:form.notes||'',children:[],rank,createdAt:now,updatedAt:now};
   let tasks;
   if(parentId){
     // Inherit domain from top-level ancestor
@@ -629,6 +681,7 @@ function editTaskFn(id,form){
     notes:form.notes||'',
     blockedBy:form.state==='blocked'?(form.blockedBy||null):null,
     preBlockedState:form.state==='blocked'?preBlockedState:null,
+    updatedAt:new Date().toISOString(),
   });
   // Propagate updated due date down to children
   if(form.dueDate)tasks=propagateDueDates(tasks,id,form.dueDate);
@@ -1882,6 +1935,7 @@ window._cycleState=function(id){
   const next=cycle[task.state]||'actionable';
   const updates={state:next};
   if(next==='waiting'&&!task.duration)updates.duration='5 min';
+  updates.updatedAt=new Date().toISOString();
   const tasks=updateTask(state.tasks,id,updates);
   saveTasks(tasks);
   setState({tasks});
@@ -2055,10 +2109,13 @@ window._gdriveDisconnect=function(){gdriveDisconnect();render();};
 window._gdriveSync=async function(){
   const data=await gdriveRead();
   if(data&&data.tasks){
-    saveTasks(data.tasks);saveArchive(data.archive||[]);
-    state.tasks=data.tasks;state.archive=data.archive||[];
+    const mergedTasks=mergeTaskTrees(state.tasks,data.tasks);
+    const mergedArchive=mergeArchives(state.archive,data.archive||[]);
+    saveTasks(mergedTasks);saveArchive(mergedArchive);
+    state.tasks=mergedTasks;state.archive=mergedArchive;
     state.tasks.forEach(t=>expandedSet.add(t.id));
-    setState({tasks:state.tasks,archive:state.archive});
+    await gdriveWrite({tasks:mergedTasks,archive:mergedArchive});
+    setState({tasks:mergedTasks,archive:mergedArchive});
   }
 };
 
