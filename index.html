@@ -238,12 +238,10 @@ let gdrive={
   status:'disconnected', // 'disconnected'|'connecting'|'connected'|'syncing'|'error'
   error:'',
   lastSync:null,
-  showReconnectBanner:false,
 };
 
 function gdriveRender(){
-  // Trigger a settings re-render if settings tab is active
-  if(state.mode==='settings')render();
+  render();
 }
 function loadTasks(){try{const s=localStorage.getItem(STORAGE_KEY);return s?JSON.parse(s):[];}catch(e){return[];}}
 function saveTasks(tasks){
@@ -251,6 +249,8 @@ function saveTasks(tasks){
     localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));
     localStorage.setItem('taskSystem_lastSaved',Date.now().toString());
   }catch(e){}
+  // If Drive configured but no token, render to show banner
+  if(gdrive.clientId&&!gdrive.token)gdriveRender();
   gdriveScheduleWrite();
 }
 function loadArchive(){try{const s=localStorage.getItem(ARCHIVE_KEY);return s?JSON.parse(s):[];}catch(e){return[];}}
@@ -468,8 +468,7 @@ async function gdriveConnect(){
       await gdriveWrite({tasks:mergedTasks,archive:mergedArchive});
       setState({tasks:mergedTasks,archive:mergedArchive});
     }
-    gdrive.status='connected';gdrive.error='';gdrive.showReconnectBanner=false;
-    gdriveRender();
+    gdrive.status='connected';gdrive.error='';    gdriveRender();
   }catch(e){
     gdrive.status='disconnected';
   }
@@ -1424,7 +1423,7 @@ function renderSettings(){
     </div>
 
     <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
-      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Google Drive sync</div>
+      <div id="gdrive-setup" style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Google Drive sync</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Your task data is stored in a private app folder in your Google Drive, invisible to other apps.</div>
       <div id="gdrive-status-block">
         ${gdrive.status==='connected'?`
@@ -1580,14 +1579,16 @@ function render(){
         </div>
       </div>
 
-      ${gdrive.clientId&&!gdrive.token&&gdrive.showReconnectBanner?`
+      ${!gdrive.clientId?`
+        <div onclick="setState({mode:'settings'});setTimeout(()=>{const el=document.getElementById('gdrive-setup');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},80)" style="display:flex;align-items:center;justify-content:space-between;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--teal-text);cursor:pointer">
+          <span>Connect Google Drive to keep your tasks synced across all your devices →</span>
+        </div>`:(gdrive.clientId&&!gdrive.token?`
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--amber-text)">
           <span>Not connected to Google Drive — changes won't sync until reconnected.</span>
           <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
             <button onclick="window._gdriveConnect()" style="font-size:12px;padding:3px 10px;color:var(--amber-text);border-color:var(--amber-border);background:transparent">Connect</button>
-            <button onclick="gdrive.showReconnectBanner=false;gdriveRender()" style="font-size:12px;padding:3px 8px;color:var(--amber-text);border-color:transparent;background:transparent">✕</button>
           </div>
-        </div>`:''}
+        </div>`:'')}
       ${overdueWaiting.length>0?`<div class="overdue-banner">⚠ ${overdueWaiting.length} overdue waiting item${overdueWaiting.length>1?'s':''}: ${overdueWaiting.map(t=>escHtml(t.title)+(t.dueDate?' (by '+fmtDate(t.dueDate)+')':'')).join(', ')} — time to follow up.</div>`:''}
 
       ${state.mode==='org'?`
@@ -2246,8 +2247,7 @@ window._runOp=async function(){
 state.tasks.forEach(t=>expandedSet.add(t.id));
 // Show reconnect banner on load if Drive is configured but not connected
 if(gdrive.clientId&&!gdrive.token){
-  gdrive.showReconnectBanner=true;
-}
+  }
 // Default both organize and op mode domains based on current work schedule
 const _initDomain=getContextDomain();
 state.activeDomain=_initDomain;
@@ -2264,8 +2264,7 @@ document.addEventListener('visibilitychange',()=>{
     window._gdriveSync();
   } else {
     // Not connected — show reconnect banner
-    gdrive.showReconnectBanner=true;
-    gdriveRender();
+        gdriveRender();
   }
 });
 
