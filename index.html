@@ -1034,6 +1034,16 @@ function renderForm(opts){
               <input type="date" id="f-dueDate-waiting" name="dueDate-waiting" value="${initial.dueDate||initial.waitingBy||''}" onchange="window._checkDueDate(this)"/>
             </div>
           </div>
+          <div class="form-inline">
+            <div>
+              <div class="form-label">Duration estimate</div>
+              <select id="f-duration-waiting" name="duration-waiting">
+                <option value="">Select…</option>
+                ${DURATIONS.map(d=>`<option ${initial.duration===d?'selected':''}>${d}</option>`).join('')}
+              </select>
+            </div>
+            <div></div>
+          </div>
         </div>
       </div>
 
@@ -1043,7 +1053,13 @@ function renderForm(opts){
             <div class="form-label">Due date (optional)</div>
             <input type="date" id="f-dueDate-na" name="dueDate-na" value="${stateVal==='not-actionable'?(initial.dueDate||''):''}" onchange="window._checkDueDate(this)"/>
           </div>
-          <div></div>
+          <div>
+            <div class="form-label">Duration estimate</div>
+            <select id="f-duration-na" name="duration-na">
+              <option value="">Select…</option>
+              ${DURATIONS.map(d=>`<option ${initial.duration===d?'selected':''}>${d}</option>`).join('')}
+            </select>
+          </div>
         </div>
         <div class="form-row">
           <div class="form-label">Thinking space — what might the next step be?</div>
@@ -1597,7 +1613,7 @@ function getTopDomain(tasks,id){
 
 function render(){
   const flat=flattenTasks(state.tasks);
-  const overdueWaiting=flat.filter(t=>t.domain===state.activeDomain&&t.state==='waiting'&&!t.closed&&isOverdue(t.dueDate||t.waitingBy));
+
   const domainFlat=flattenTasks(state.tasks.filter(t=>t.domain===state.activeDomain));
   const actionableCount=domainFlat.filter(t=>t.state==='actionable'&&!t.closed).length;
   const waitingCount=domainFlat.filter(t=>t.state==='waiting'&&!t.closed).length;
@@ -1625,7 +1641,7 @@ function render(){
             <button onclick="window._gdriveConnect()" style="font-size:12px;padding:3px 10px;color:var(--amber-text);border-color:var(--amber-border);background:transparent">Connect</button>
           </div>
         </div>`:'')}
-      ${overdueWaiting.length>0?`<div class="overdue-banner">⚠ ${overdueWaiting.length} overdue waiting item${overdueWaiting.length>1?'s':''}: ${overdueWaiting.map(t=>escHtml(t.title)+(t.dueDate?' (by '+fmtDate(t.dueDate)+')':'')).join(', ')} — time to follow up.</div>`:''}
+
 
       ${state.mode==='org'?`
         <div style="flex-shrink:0">
@@ -1992,7 +2008,7 @@ window._toggleSmartFilter=function(forceOn){
     opResults:null,opChosen:null,opLoading:false,opDismissed:new Set()};
   render();
   const flat=flattenTasks(state.tasks);
-  const hasActionable=flat.some(t=>!t.closed&&(t.state==='actionable'||t.state==='waiting'||needsDefinition(t)));
+  const hasActionable=flat.some(t=>!t.closed&&(t.state==='actionable'||(t.state==='waiting'&&isOverdue(t.dueDate||t.waitingBy))||needsDefinition(t)));
   if(hasActionable)window._runOp();
 };
 
@@ -2113,7 +2129,7 @@ window._formSave=function(){
     title:g('f-title'),
     domain:g('f-domain')||state.activeDomain,
     state:stateVal,
-    duration:g('f-duration'),
+    duration:g('f-duration')||g('f-duration-waiting')||g('f-duration-na')||null,
     dueDate:(stateVal==='not-actionable'?g('f-dueDate-na'):stateVal==='waiting'?g('f-dueDate-waiting'):g('f-dueDate')),
     waitingWho:g('f-waitingWho'),
     waitingBy:(stateVal==='waiting'?g('f-dueDate-waiting'):''),
@@ -2323,7 +2339,7 @@ window._runOp=async function(){
     if(t.closed)return false;
     if(t.state==='blocked')return false;
     if(t.domain===state.opDomain&&t.state==='actionable')return true;
-    if(t.domain===state.opDomain&&t.state==='waiting')return true;
+    if(t.domain===state.opDomain&&t.state==='waiting'&&isOverdue(t.dueDate||t.waitingBy))return true;
     if(state.settings.showNeedsDefinitionInOp&&t.domain===state.opDomain&&needsDefinition(t))return true;
     if(crossDomainQualifies(t))return true;
     return false;
