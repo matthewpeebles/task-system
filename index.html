@@ -258,6 +258,8 @@ function saveArchive(archive){
   try{localStorage.setItem(ARCHIVE_KEY,JSON.stringify(archive));}catch(e){}
   gdriveScheduleWrite();
 }
+const DEFAULT_EXCLUSION_WORDS='the,and,with,for,that,from,this,have,will,need,task,work,make,get,add,also,some,your,about,into,them,then,when,just,been,more,over,such,does,done,each,here,know,most,must,next,only,said,same,they,used,very,well,what';
+
 const DEFAULT_SETTINGS={
   workDays:['Mon','Tue','Wed','Thu','Fri'],
   workStart:'05:00',
@@ -271,6 +273,9 @@ const DEFAULT_SETTINGS={
   crossDomainDurationCap:'',
   crossDomainMultiplier:0.5,
   showClosedSubtasksDefault:true,
+  showNeedsDefinitionInOp:false,
+  needsDefinitionBoost:10,
+  dedupExclusionWords:DEFAULT_EXCLUSION_WORDS,
 };
 function loadSettings(){
   try{const s=localStorage.getItem(SETTINGS_KEY);return s?{...DEFAULT_SETTINGS,...JSON.parse(s)}:DEFAULT_SETTINGS;}
@@ -391,7 +396,8 @@ function gdriveScheduleWrite(){
   if(!gdrive.token)return;
   clearTimeout(_driveWriteTimer);
   _driveWriteTimer=setTimeout(()=>{
-    gdriveWrite({tasks:state.tasks,archive:state.archive});
+    const{clientId,...syncableSettings}=state.settings;
+    gdriveWrite({tasks:state.tasks,archive:state.archive,settings:syncableSettings});
   },2000);
 }
 
@@ -456,17 +462,24 @@ async function gdriveConnect(){
     // Read existing data from Drive and merge (Drive wins if it has more recent data)
     const data=await gdriveRead();
     if(data&&data.tasks){
-      // Per-task merge: union both sides keeping newer updatedAt per task
       const mergedTasks=mergeTaskTrees(state.tasks,data.tasks);
       const mergedArchive=mergeArchives(state.archive,data.archive||[]);
+      // Merge settings: Drive wins (it's the cross-device source of truth)
+      // clientId is never in the Drive file — keep local clientId
+      let mergedSettings=state.settings;
+      if(data.settings){
+        mergedSettings={...DEFAULT_SETTINGS,...data.settings,clientId:state.settings.clientId};
+      }
       saveTasks(mergedTasks);
       saveArchive(mergedArchive);
+      saveSettings(mergedSettings);
       state.tasks=mergedTasks;
       state.archive=mergedArchive;
       state.tasks.forEach(t=>expandedSet.add(t.id));
-      // Write merged result back to Drive
-      await gdriveWrite({tasks:mergedTasks,archive:mergedArchive});
-      setState({tasks:mergedTasks,archive:mergedArchive});
+      const{clientId,...syncableSettings}=mergedSettings;
+      await gdriveWrite({tasks:mergedTasks,archive:mergedArchive,settings:syncableSettings});
+      setState({tasks:mergedTasks,archive:mergedArchive,settings:mergedSettings,
+        showClosedSubtasks:mergedSettings.showClosedSubtasksDefault});
     }
     gdrive.status='connected';gdrive.error='';    gdriveRender();
   }catch(e){
@@ -506,7 +519,9 @@ function scoreTask(task,topTasks,availMins){
   let waitBonus=0;
   if(task.state==='waiting'&&isOverdue(task.dueDate||task.waitingBy))waitBonus=30;
 
-  return rankScore+urgency+fitScore+waitBonus;
+  const needsDefBoost=(task.state==='not-actionable'&&needsDefinition(task))
+    ?(state?.settings?.needsDefinitionBoost??10):0;
+  return rankScore+urgency+fitScore+waitBonus+needsDefBoost;
 }
 
 function scoreTaskWithDomain(task,topTasks,availMins,activeDomain){
@@ -520,15 +535,17 @@ function scoreTaskWithDomain(task,topTasks,availMins,activeDomain){
 function findSimilar(tasks,title){
   const needle=title.toLowerCase().trim();
   if(needle.length<4)return[];
-  const needleWords=needle.split(/\s+/).filter(w=>w.length>3);
+  const exclusions=new Set((state?.settings?.dedupExclusionWords||DEFAULT_EXCLUSION_WORDS).split(',').map(w=>w.trim().toLowerCase()).filter(Boolean));
+  const filterWords=words=>words.filter(w=>w.length>=4&&!exclusions.has(w));
+  const needleWords=filterWords(needle.split(/\s+/));
+  if(!needleWords.length)return[];
   const flat=flattenTasks(tasks);
   return flat.filter(t=>{
     const hay=t.title.toLowerCase();
-    const hayWords=hay.split(/\s+/).filter(w=>w.length>3);
-    // Match if: hay contains needle prefix, needle contains hay prefix,
-    // or they share a meaningful word
-    if(hay.includes(needle.slice(0,Math.min(10,needle.length))))return true;
-    if(needle.includes(hay.slice(0,Math.min(10,hay.length))))return true;
+    const hayWords=filterWords(hay.split(/\s+/));
+    if(!hayWords.length)return false;
+    if(hay.includes(needle.slice(0,Math.min(10,needle.length)))&&needle.slice(0,10).split(/\s+/).some(w=>!exclusions.has(w)&&w.length>=4))return true;
+    if(needle.includes(hay.slice(0,Math.min(10,hay.length)))&&hay.slice(0,10).split(/\s+/).some(w=>!exclusions.has(w)&&w.length>=4))return true;
     return needleWords.some(w=>hayWords.includes(w));
   }).slice(0,4);
 }
@@ -577,7 +594,7 @@ let state={
   tasks:loadTasks(),
   archive:loadArchive(),
   settings:loadSettings(),
-  mode:'org',           // 'org' | 'op' | 'archive' | 'settings'
+  mode:'org',           // 'org' | 'archive' | 'settings'
   activeDomain:'work',
   showModal:false,
   modalParentId:null,
@@ -659,16 +676,7 @@ function addTask(form,parentId,placeAfterVal){
   }
   // Propagate due date down to children if any
   if(t.dueDate)tasks=propagateDueDates(tasks,t.id,t.dueDate);
-  // Auto-create actionable child if task is not-actionable
-  if(form.state==='not-actionable'){
-    const siblingsAfterAdd=findTask(tasks,t.id)?.children||[];
-    const child={id:genId(),title:`Define: ${t.title}`,domain:t.domain,
-      state:'actionable',duration:'< 5 min',dueDate:t.dueDate||null,
-      waitingWho:null,waitingBy:null,notes:'',children:[],rank:siblingsAfterAdd.length+1,
-      createdAt:new Date().toISOString()};
-    tasks=addChild(tasks,t.id,child);
-    expandedSet.add(t.id);
-  }
+
   state.tasks=tasks;
   saveTasks(tasks);
   setState({showModal:false,modalParentId:null,tasks});
@@ -956,14 +964,14 @@ function renderForm(opts){
         <div class="form-label">Parent task (optional)</div>
         <select id="f-parent">
           <option value="">— None (top-level task) —</option>
-          ${flattenTasks(state.tasks).filter(t=>t.id!==(initial.id||'')).map(t=>{
+          ${flattenTasks(state.tasks).filter(t=>t.id!==(initial.id||'')&&t.domain===(isEdit?(initial.domain||state.activeDomain):state.activeDomain)).map(t=>{
             const depth=getTaskDepth(state.tasks,t.id);
             const indent='    '.repeat(depth);
             // For edits find actual parent; for new tasks use modalParentId
             const effectiveParentId=isEdit
               ?(findParent(state.tasks,initial.id||'')?.id||null)
               :state.modalParentId;
-            return `<option value="${t.id}" ${effectiveParentId===t.id?'selected':''}>${indent}${escHtml(t.title)} (${t.domain})</option>`;
+            return `<option value="${t.id}" ${effectiveParentId===t.id?'selected':''}>${indent}${escHtml(t.title)}</option>`;
           }).join('')}
         </select>
       </div>
@@ -1159,7 +1167,7 @@ function renderTaskNode(task,isTop,expanded,dimmed){
 // Closed tasks never match any filter.
 function taskSelfMatches(task,filter){
   if(task.closed)return false;
-  if(!filter)return true;
+  if(!filter||filter==='smart')return true;
   if(filter==='actionable')return task.state==='actionable';
   if(filter==='waiting')return task.state==='waiting';
   if(filter==='needs-definition')return needsDefinition(task)&&task.state!=='blocked';
@@ -1167,7 +1175,7 @@ function taskSelfMatches(task,filter){
 }
 // Does this task or any descendant match the filter?
 function treeHasMatch(task,filter){
-  if(!filter)return true;
+  if(!filter||filter==='smart')return true;
   if(taskSelfMatches(task,filter))return true;
   return(task.children||[]).some(c=>treeHasMatch(c,filter));
 }
@@ -1333,8 +1341,31 @@ function renderSettings(){
       <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">What now? defaults</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Default time available</div>
       <select onchange="window._saveSetting('defaultAvail',this.value)" style="font-size:13px;margin-bottom:14px">
-        ${['15 min','30 min','1 hr','2 hrs','Half day','All day'].map(a=>`<option ${s.defaultAvail===a?'selected':''}>${a}</option>`).join('')}
+        ${['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'].map(a=>`<option ${s.defaultAvail===a?'selected':''}>${a}</option>`).join('')}
       </select>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-size:13px">Include "Needs definition" tasks</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">Surface undefined tasks in What now? as a reminder to define them</div>
+        </div>
+        <button onclick="window._saveSetting('showNeedsDefinitionInOp',!state.settings.showNeedsDefinitionInOp)" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${s.showNeedsDefinitionInOp?'var(--teal-border)':'var(--border2)'};background:${s.showNeedsDefinitionInOp?'var(--teal-bg)':'transparent'};color:${s.showNeedsDefinitionInOp?'var(--teal-text)':'var(--text2)'}">
+          ${s.showNeedsDefinitionInOp?'On':'Off'}
+        </button>
+      </div>
+
+      <div style="margin-bottom:4px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <div style="font-size:12px;color:var(--text2)">Needs definition priority boost</div>
+          <div style="font-size:12px;font-weight:500">+${s.needsDefinitionBoost} pts</div>
+        </div>
+        <input type="range" min="0" max="40" step="5" value="${s.needsDefinitionBoost}"
+          oninput="window._saveSettingDebounced('needsDefinitionBoost',parseInt(this.value))"
+          style="width:100%"/>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:2px">
+          <span>No boost</span><span>Compete with actionable</span>
+        </div>
+      </div>
     </div>
 
     <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
@@ -1411,7 +1442,7 @@ function renderSettings(){
 
     <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px">
       <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Organize view</div>
-      <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div>
           <div style="font-size:13px">Show closed subtasks by default</div>
           <div style="font-size:11px;color:var(--text2);margin-top:2px">When opening the app, show or hide completed subtasks</div>
@@ -1419,6 +1450,12 @@ function renderSettings(){
         <button onclick="window._saveSetting('showClosedSubtasksDefault',!state.settings.showClosedSubtasksDefault)" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${s.showClosedSubtasksDefault?'var(--teal-border)':'var(--border2)'};background:${s.showClosedSubtasksDefault?'var(--teal-bg)':'transparent'};color:${s.showClosedSubtasksDefault?'var(--teal-text)':'var(--text2)'}">
           ${s.showClosedSubtasksDefault?'On':'Off'}
         </button>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Words to ignore in duplicate detection</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Comma-separated. Common words that appear in many task titles and shouldn't trigger duplicate warnings.</div>
+        <textarea onchange="window._saveSetting('dedupExclusionWords',this.value)" style="font-size:12px;min-height:80px">${escHtml(s.dedupExclusionWords||DEFAULT_EXCLUSION_WORDS)}</textarea>
+        <button class="ghost" style="font-size:11px;color:var(--text3);margin-top:4px" onclick="window._saveSetting('dedupExclusionWords',DEFAULT_EXCLUSION_WORDS)">Reset to defaults</button>
       </div>
     </div>
 
@@ -1573,7 +1610,6 @@ function render(){
         <h1>Task system</h1>
         <div class="mode-tabs">
           <button class="mode-tab${state.mode==='org'?' active':''}" onclick="setState({mode:'org'})">Organize</button>
-          <button class="mode-tab${state.mode==='op'?' active':''}" onclick="window._switchToOp()">What now?</button>
           <button class="mode-tab${state.mode==='archive'?' active':''}" onclick="setState({mode:'archive'})">Archive${state.archive.length>0?` (${state.archive.length})`:''}</button>
           <button class="mode-tab${state.mode==='settings'?' active':''}" onclick="setState({mode:'settings'})">⚙</button>
         </div>
@@ -1610,7 +1646,25 @@ function render(){
             <div class="stat-num" style="color:var(--red-text)">${notActionableCount}</div>
             <div class="stat-label">Needs definition</div>
           </div>
+          <div class="stat${state.filterState==='smart'?' stat-active':''}" onclick="window._toggleSmartFilter()" style="cursor:pointer;${state.filterState==='smart'?'border-color:var(--blue-border);background:var(--blue-bg)':''}">
+            <div class="stat-num" style="color:var(--blue-text)">★</div>
+            <div class="stat-label" style="${state.filterState==='smart'?'color:var(--blue-text)':''}">What now?</div>
+          </div>
         </div>
+        ${state.filterState==='smart'?`
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 0 4px;flex-wrap:wrap">
+            <div style="display:flex;gap:4px">
+              <button onclick="setState({opDomain:'work',opResults:null,opDismissed:new Set()})" style="font-size:11px;padding:3px 10px;border-radius:99px;border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.opDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.opDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
+              <button onclick="setState({opDomain:'personal',opResults:null,opDismissed:new Set()})" style="font-size:11px;padding:3px 10px;border-radius:99px;border:0.5px solid ${state.opDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.opDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.opDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
+            </div>
+            <select onchange="setState({opAvail:this.value,opResults:null,opDismissed:new Set()})" style="font-size:11px;padding:3px 8px">
+              <option value="">Any duration</option>
+              ${['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'].map(a=>`<option ${state.opAvail===a?'selected':''}>${a}</option>`).join('')}
+            </select>
+            <button class="primary" style="font-size:11px;padding:3px 10px" onclick="window._runOp()">
+              ${state.opLoading?'Scoring…':state.opResults?'Re-run →':'Show tasks →'}
+            </button>
+          </div>`:''}
 
         <div class="domain-tabs">
           <button class="domain-tab${state.activeDomain==='work'?' work':''}" onclick="setState({activeDomain:'work'})">Work</button>
@@ -1633,6 +1687,45 @@ function render(){
         </div>
         <div class="task-tree" id="task-tree">
           ${(()=>{
+            if(state.opLoading&&state.filterState==='smart')return`<div class="loading">Scoring your tasks<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>`;
+            if(state.filterState==='smart'){
+              if(!state.opResults)return`<div class="empty">Click "Show tasks →" to get your prioritized list.</div>`;
+              const visible=state.opResults.filter(r=>!state.opDismissed.has(r.task.id));
+              if(!visible.length)return`<div class="loading" style="padding:20px">Finding more tasks…</div>`;
+              return visible.map((r,i)=>{
+                const task=r.task;
+                const isTop=!findParent(state.tasks,task.id);
+                const ancestor=getTopAncestor(state.tasks,task.id);
+                const chosen=state.opChosen===i;
+                return`<div style="margin-bottom:6px">
+                  ${ancestor&&ancestor.id!==task.id?`<div style="font-size:11px;color:var(--text3);margin-bottom:2px;padding-left:2px">↳ ${escHtml(ancestor.title)}</div>`:''}
+                  <div class="${chosen?'task-row op-chosen-'+state.opDomain:'task-row'}" onclick="setState({opChosen:${i}})"
+                    style="cursor:pointer${chosen?';border-color:'+(state.opDomain==='work'?'var(--blue-border)':'var(--teal-border)')+';background:'+(state.opDomain==='work'?'var(--blue-bg)':'var(--teal-bg)'):''}">
+                    <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:1px">
+                      <span style="font-size:12px;color:var(--text3);font-weight:400;width:24px;text-align:center">${getRankLabel(state.tasks,task.id)}</span>
+                    </div>
+                    <div class="task-main">
+                      <div class="task-title">${escHtml(task.title)}</div>
+                      <div class="task-meta">
+                        <span class="badge ${STATE_BADGE[task.state]}">${STATE_LABELS[task.state]}</span>
+                        ${task.duration?`<span class="badge b-neutral">${task.duration}</span>`:''}
+                        ${task.dueDate?`<span class="badge ${isOverdue(task.dueDate)?'b-overdue':'b-neutral'}">${task.state==='waiting'?'Expected by':'Due'} ${fmtDate(task.dueDate)}</span>`:''}
+                        ${task.state==='waiting'&&task.waitingWho?`<span class="badge b-waiting">↻ ${escHtml(task.waitingWho)}</span>`:''}
+                        ${r.crossDomain?`<span class="badge b-overdue">Cross-domain</span>`:''}
+                      </div>
+                      ${r.why?`<div style="font-size:11px;color:var(--text2);font-style:italic;margin-top:3px">${escHtml(r.why)}</div>`:''}
+                      ${task.state==='waiting'&&task.waitingWho?`<div style="font-size:12px;color:var(--amber-text);margin-top:4px">↻ Waiting on ${escHtml(task.waitingWho)}</div>`:''}
+                      ${task.notes?`<div class="task-notes">${escHtml(task.notes.slice(0,120))}${task.notes.length>120?'…':''}</div>`:''}
+                    </div>
+                    <div class="task-actions" onclick="event.stopPropagation()">
+                      <button class="ghost" onclick="window._editTask('${task.id}')" title="Edit">✎</button>
+                      <button class="ghost" onclick="event.stopPropagation();window._opDone('${task.id}')" title="Mark done" style="font-size:13px;color:var(--teal-text)">✓</button>
+                    </div>
+                  </div>
+                  ${chosen?`<div style="margin-top:4px;padding:8px 12px;background:${state.opDomain==='work'?'var(--blue-bg)':'var(--teal-bg)'};border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--teal-border)'};border-radius:var(--radius);font-size:12px;color:${state.opDomain==='work'?'var(--blue-text)':'var(--teal-text)'}">Working on: <strong>${escHtml(task.title)}</strong></div>`:''}
+                </div>`;
+              }).join('');
+            }
             if(domainTasks.length===0)return`<div class="empty">No ${state.activeDomain} tasks yet.<br>Click the button above to get started.</div>`;
             const anyMatch=!state.filterState||domainTasks.some(t=>treeHasMatch(t,state.filterState));
             if(!anyMatch)return`<div class="empty">No ${state.activeDomain} tasks match this filter.</div>`;
@@ -1640,7 +1733,7 @@ function render(){
           })()}
         </div>
 
-      `:(state.mode==='archive'?`<div style="flex:1;overflow-y:auto;padding-bottom:16px">${renderArchiveView()}</div>`:state.mode==='settings'?`<div id="settings-panel" style="flex:1;overflow-y:auto;padding-bottom:16px">${renderSettings()}</div>`:`<div id="op-mode" style="flex:1;overflow-y:auto;padding-bottom:16px">${renderOpMode()}</div>`)}
+      `:(state.mode==='archive'?`<div style="flex:1;overflow-y:auto;padding-bottom:16px">${renderArchiveView()}</div>`:`<div id="settings-panel" style="flex:1;overflow-y:auto;padding-bottom:16px">${renderSettings()}</div>`)}
     </div>
 
     ${state.showModal?`
@@ -1886,12 +1979,20 @@ function scrollToTask(id){
 
 // ── Global handlers ────────────────────────────────────────────────────────
 window._switchToOp=function(){
-  // Only auto-run if not already showing results; preserve current domain
-  if(state.mode==='op'&&state.opResults)return setState({mode:'op'});
-  state={...state,mode:'op',opResults:null,opChosen:null,opLoading:false,opDismissed:new Set()};
+  // Legacy — redirect to smart filter
+  window._toggleSmartFilter(true);
+};
+window._toggleSmartFilter=function(forceOn){
+  const turning0n=forceOn||state.filterState!=='smart';
+  if(!turning0n){setState({filterState:null});return;}
+  // Set domain from schedule, keep avail default
+  const domain=getContextDomain();
+  state={...state,filterState:'smart',opDomain:domain,
+    opAvail:state.opAvail||state.settings.defaultAvail,
+    opResults:null,opChosen:null,opLoading:false,opDismissed:new Set()};
   render();
   const flat=flattenTasks(state.tasks);
-  const hasActionable=flat.some(t=>t.state==='actionable'||(t.state==='waiting'&&isOverdue(t.waitingBy)));
+  const hasActionable=flat.some(t=>!t.closed&&(t.state==='actionable'||t.state==='waiting'||needsDefinition(t)));
   if(hasActionable)window._runOp();
 };
 
@@ -2130,11 +2231,17 @@ window._gdriveSync=async function(){
   if(data&&data.tasks){
     const mergedTasks=mergeTaskTrees(state.tasks,data.tasks);
     const mergedArchive=mergeArchives(state.archive,data.archive||[]);
-    saveTasks(mergedTasks);saveArchive(mergedArchive);
+    let mergedSettings=state.settings;
+    if(data.settings){
+      mergedSettings={...DEFAULT_SETTINGS,...data.settings,clientId:state.settings.clientId};
+    }
+    saveTasks(mergedTasks);saveArchive(mergedArchive);saveSettings(mergedSettings);
     state.tasks=mergedTasks;state.archive=mergedArchive;
     state.tasks.forEach(t=>expandedSet.add(t.id));
-    await gdriveWrite({tasks:mergedTasks,archive:mergedArchive});
-    setState({tasks:mergedTasks,archive:mergedArchive});
+    const{clientId,...syncableSettings}=mergedSettings;
+    await gdriveWrite({tasks:mergedTasks,archive:mergedArchive,settings:syncableSettings});
+    setState({tasks:mergedTasks,archive:mergedArchive,settings:mergedSettings,
+      showClosedSubtasks:mergedSettings.showClosedSubtasksDefault});
   }
 };
 
@@ -2142,6 +2249,14 @@ window._saveSetting=function(key,val){
   const settings={...state.settings,[key]:val};
   saveSettings(settings);
   setState({settings});
+  // Schedule Drive write for settings change (exclude clientId)
+  if(gdrive.token){
+    clearTimeout(_driveWriteTimer);
+    _driveWriteTimer=setTimeout(()=>{
+      const{clientId,...syncableSettings}=state.settings;
+      gdriveWrite({tasks:state.tasks,archive:state.archive,settings:syncableSettings});
+    },2000);
+  }
 };
 // Debounced version for sliders — updates state only after dragging stops
 const _saveSettingDebounceTimers={};
@@ -2206,10 +2321,10 @@ window._runOp=async function(){
   }
   const candidates=flat.filter(t=>{
     if(t.closed)return false;
-    if(t.state==='not-actionable')return false;
     if(t.state==='blocked')return false;
     if(t.domain===state.opDomain&&t.state==='actionable')return true;
     if(t.domain===state.opDomain&&t.state==='waiting')return true;
+    if(state.settings.showNeedsDefinitionInOp&&t.domain===state.opDomain&&needsDefinition(t))return true;
     if(crossDomainQualifies(t))return true;
     return false;
   });
@@ -2252,7 +2367,7 @@ if(gdrive.clientId&&!gdrive.token){
 const _initDomain=getContextDomain();
 state.activeDomain=_initDomain;
 state.opDomain=_initDomain;
-state.opAvail=state.settings.defaultAvail;
+state.opAvail=state.settings.defaultAvail||'30 min';
 render();
 
 // ── Visibility-based sync ─────────────────────────────────────────────────
@@ -2260,11 +2375,9 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible')return;
   if(!gdrive.clientId)return; // Drive not configured
   if(gdrive.token){
-    // Connected — sync silently
     window._gdriveSync();
   } else {
-    // Not connected — show reconnect banner
-        gdriveRender();
+    gdriveRender();
   }
 });
 
@@ -2279,7 +2392,6 @@ setInterval(()=>{
     if(state.activeDomain===state.opDomain){
       state.activeDomain=current;
       state.opDomain=current;
-      // Clear op results so next What now? reflects new domain
       state.opResults=null;
       state.opDismissed=new Set();
       render();
