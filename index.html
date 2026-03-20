@@ -1002,71 +1002,15 @@ function renderForm(opts){
         </select>
       </div>
 
-      <div id="f-section-actionable" style="display:${stateVal==='actionable'?'block':'none'}">
-        <div class="form-inline">
-          <div>
-            <div class="form-label">Duration estimate</div>
-            <select id="f-duration" name="duration">
-              <option value="">Select…</option>
-              ${DURATIONS.map(d=>`<option ${initial.duration===d?'selected':''}>${d}</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <div class="form-label">Due date (optional)</div>
-            <input type="date" id="f-dueDate" name="dueDate" value="${initial.dueDate||''}" onchange="window._checkDueDate(this)"/>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-label">Notes (optional)</div>
-          <textarea id="f-notes-actionable" name="notes-actionable" style="min-height:44px" placeholder="Additional context…">${escHtml(initial.notes||'')}</textarea>
-        </div>
-      </div>
-
+      <!-- Waiting on — only shown for waiting state -->
       <div id="f-section-waiting" style="display:${stateVal==='waiting'?'block':'none'}">
-        <div class="waiting-extra">
-          <div class="form-inline">
-            <div>
-              <div class="form-label">Waiting on</div>
-              <input id="f-waitingWho" name="waitingWho" value="${escHtml(initial.waitingWho||'')}" placeholder="Person's name"/>
-            </div>
-            <div>
-              <div class="form-label">Expected by</div>
-              <input type="date" id="f-dueDate-waiting" name="dueDate-waiting" value="${initial.dueDate||initial.waitingBy||''}" onchange="window._checkDueDate(this)"/>
-            </div>
-          </div>
-          <div class="form-inline">
-            <div>
-              <div class="form-label">Duration estimate</div>
-              <select id="f-duration-waiting" name="duration-waiting">
-                <option value="">Select…</option>
-                ${DURATIONS.map(d=>`<option ${initial.duration===d?'selected':''}>${d}</option>`).join('')}
-              </select>
-            </div>
-            <div></div>
-          </div>
-        </div>
-      </div>
-
-      <div id="f-section-notactionable" style="display:${stateVal==='not-actionable'?'block':'none'}">
-        <div class="form-inline">
-          <div>
-            <div class="form-label">Due date (optional)</div>
-            <input type="date" id="f-dueDate-na" name="dueDate-na" value="${stateVal==='not-actionable'?(initial.dueDate||''):''}" onchange="window._checkDueDate(this)"/>
-          </div>
-          <div>
-            <div class="form-label">Duration estimate</div>
-            <select id="f-duration-na" name="duration-na">
-              <option value="">Select…</option>
-              ${DURATIONS.map(d=>`<option ${initial.duration===d?'selected':''}>${d}</option>`).join('')}
-            </select>
-          </div>
-        </div>
         <div class="form-row">
-          <div class="form-label">Thinking space — what might the next step be?</div>
-          <textarea id="f-notes-na" name="notes-na" placeholder="Use this to think through what needs to happen…">${escHtml(initial.notes||'')}</textarea>
+          <div class="form-label">Waiting on</div>
+          <input id="f-waitingWho" name="waitingWho" value="${escHtml(initial.waitingWho||'')}" placeholder="Person's name"/>
         </div>
       </div>
 
+      <!-- Blocked by — only shown for blocked state -->
       <div id="f-section-blocked" style="display:${stateVal==='blocked'?'block':'none'}">
         <div class="form-row">
           <div class="form-label">Blocked by</div>
@@ -1087,6 +1031,30 @@ function renderForm(opts){
         </div>
       </div>
 
+      <!-- Duration + Date — always visible, date label changes by state -->
+      <div class="form-inline">
+        <div>
+          <div class="form-label">Duration estimate</div>
+          <select id="f-duration" name="duration">
+            <option value="">Select…</option>
+            ${DURATIONS.map(d=>`<option ${initial.duration===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <div class="form-label" id="f-date-label">${stateVal==='waiting'?'Expected by':'Due date (optional)'}</div>
+          <input type="date" id="f-dueDate" name="dueDate"
+            value="${initial.dueDate||initial.waitingBy||''}"
+            onchange="window._checkDueDate(this)"/>
+        </div>
+      </div>
+
+      <!-- Notes — always visible, placeholder changes by state -->
+      <div class="form-row">
+        <div class="form-label" id="f-notes-label">${stateVal==='not-actionable'?'Thinking space — what might the next step be?':'Notes (optional)'}</div>
+        <textarea id="f-notes" name="notes" style="min-height:44px"
+          placeholder="${stateVal==='not-actionable'?'Use this to think through what needs to happen…':'Additional context…'}">${escHtml(initial.notes||'')}</textarea>
+      </div>
+
       <div id="f-due-warn" style="display:none;font-size:11px;color:var(--amber-text);margin-bottom:8px;line-height:1.5"></div>
       <div class="btn-row">
         <button onclick="window._formCancel()">Cancel</button>
@@ -1096,11 +1064,16 @@ function renderForm(opts){
 }
 
 window._formStateChange=function(val){
-  document.getElementById('f-section-actionable').style.display=val==='actionable'?'block':'none';
-  document.getElementById('f-section-waiting').style.display=val==='waiting'?'block':'none';
-  document.getElementById('f-section-notactionable').style.display=val==='not-actionable'?'block':'none';
+  const waitEl=document.getElementById('f-section-waiting');
   const blockedEl=document.getElementById('f-section-blocked');
+  if(waitEl)waitEl.style.display=val==='waiting'?'block':'none';
   if(blockedEl)blockedEl.style.display=val==='blocked'?'block':'none';
+  const dateLabel=document.getElementById('f-date-label');
+  if(dateLabel)dateLabel.textContent=val==='waiting'?'Expected by':'Due date (optional)';
+  const notesLabel=document.getElementById('f-notes-label');
+  if(notesLabel)notesLabel.textContent=val==='not-actionable'?'Thinking space — what might the next step be?':'Notes (optional)';
+  const notesEl=document.getElementById('f-notes');
+  if(notesEl)notesEl.placeholder=val==='not-actionable'?'Use this to think through what needs to happen…':'Additional context…';
 };
 
 // Dedup: runs on every keystroke with 400ms debounce, updates div in-place — no re-render.
@@ -2107,7 +2080,7 @@ window._confirmMove=function(){
 window._formSave=function(){
   const g=id=>document.getElementById(id)?.value||'';
   const stateVal=g('f-state')||'not-actionable';
-  const notes=stateVal==='actionable'?g('f-notes-actionable'):stateVal==='not-actionable'?g('f-notes-na'):'';
+  const notes=g('f-notes');
   const blockerId=stateVal==='blocked'?(g('f-blockedby')||null):null;
   // Validate blocker if setting to blocked
   if(stateVal==='blocked'&&blockerId){
@@ -2129,10 +2102,10 @@ window._formSave=function(){
     title:g('f-title'),
     domain:g('f-domain')||state.activeDomain,
     state:stateVal,
-    duration:g('f-duration')||g('f-duration-waiting')||g('f-duration-na')||null,
-    dueDate:(stateVal==='not-actionable'?g('f-dueDate-na'):stateVal==='waiting'?g('f-dueDate-waiting'):g('f-dueDate')),
+    duration:g('f-duration')||null,
+    dueDate:g('f-dueDate')||null,
     waitingWho:g('f-waitingWho'),
-    waitingBy:(stateVal==='waiting'?g('f-dueDate-waiting'):''),
+    waitingBy:(stateVal==='waiting'?g('f-dueDate'):''),
     notes,
     blockedBy:blockerId,
   };
