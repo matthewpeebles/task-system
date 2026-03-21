@@ -276,6 +276,13 @@ const DEFAULT_SETTINGS={
   showNeedsDefinitionInOp:false,
   needsDefinitionBoost:10,
   dedupExclusionWords:DEFAULT_EXCLUSION_WORDS,
+  opDismissDuration:60,
+  // What now? factor multipliers (1-100, default 50)
+  mRank:50,
+  mUrgency:50,
+  mDurationFit:50,
+  mWaitingOverdue:50,
+  mNeedsDef:50,
 };
 function loadSettings(){
   try{const s=localStorage.getItem(SETTINGS_KEY);return s?{...DEFAULT_SETTINGS,...JSON.parse(s)}:DEFAULT_SETTINGS;}
@@ -495,33 +502,60 @@ function gdriveDisconnect(){
 
 // ── Scoring ────────────────────────────────────────────────────────────────
 function scoreTask(task,topTasks,availMins){
+  const s=state?.settings||DEFAULT_SETTINGS;
   const top=getTopAncestor(topTasks,task.id)||task;
-  const rank=top.rank||99;
-  const rankScore=(100-Math.min(rank,100))*0.4;
 
-  let urgency=0;
-  const due=task.dueDate||top.dueDate;
+  // ── Rank (0-40): relative to tasks in same domain ──────────────────────
+  const domainTops=topTasks.filter(t=>t.domain===task.domain);
+  const total=domainTops.length||1;
+  const rank=top.rank||total;
+  const rankRaw=(1-(rank/total))*40;
+
+  // ── Urgency (0-40): based on ancestor due date ──────────────────────────
+  const due=top.dueDate; // Option C: ancestor date only
+  let urgencyRaw=40; // no due date = 40 (encourage dating tasks)
   if(due){
     const diff=Math.floor((new Date(due)-new Date())/(86400000));
-    if(diff<=0)urgency=40;
-    else if(diff<=1)urgency=35;
-    else if(diff<=3)urgency=28;
-    else if(diff<=7)urgency=18;
-    else if(diff<=14)urgency=10;
-    else urgency=4;
+    if(diff<-30)urgencyRaw=38;
+    else if(diff<-14)urgencyRaw=35;
+    else if(diff<-7)urgencyRaw=31;
+    else if(diff<-4)urgencyRaw=26; // overdue 5-7 days
+    else if(diff<-2)urgencyRaw=31; // overdue 3-4 days (note: non-monotonic per spec)
+    else if(diff===-2)urgencyRaw=35;
+    else if(diff===-1)urgencyRaw=38;
+    else if(diff===0)urgencyRaw=40; // due today
+    else if(diff===1)urgencyRaw=26;
+    else if(diff===2)urgencyRaw=24;
+    else if(diff<=5)urgencyRaw=21;
+    else if(diff<=7)urgencyRaw=17;
+    else if(diff<=14)urgencyRaw=12;
+    else if(diff<=30)urgencyRaw=6;
+    else urgencyRaw=0;
   }
 
-  let fitScore=availMins?0:8;
+  // ── Duration fit (0-40) ─────────────────────────────────────────────────
+  let fitRaw=40; // no duration set = 40
   if(availMins&&task.duration){
-    fitScore=durationToMins(task.duration)<=availMins?15:0;
+    fitRaw=durationToMins(task.duration)<=availMins?40:0;
   }
 
-  let waitBonus=0;
-  if(task.state==='waiting'&&isOverdue(task.dueDate||task.waitingBy))waitBonus=30;
+  // ── Waiting overdue (0-40) ──────────────────────────────────────────────
+  const ancTask=getTopAncestor(topTasks,task.id)||task;
+  let waitRaw=0;
+  if(task.state==='waiting'&&isOverdue(ancTask.dueDate||task.waitingBy))waitRaw=40;
 
-  const needsDefBoost=(task.state==='not-actionable'&&needsDefinition(task))
-    ?(state?.settings?.needsDefinitionBoost??10):0;
-  return rankScore+urgency+fitScore+waitBonus+needsDefBoost;
+  // ── Needs definition (0-40) ────────────────────────────────────────────
+  let needsDefRaw=0;
+  if(task.state==='not-actionable'&&needsDefinition(task))needsDefRaw=40;
+
+  // ── Apply multipliers (1-100 scale, 50=neutral, divide by 50 to normalize)
+  const mR=(s.mRank||50)/50;
+  const mU=(s.mUrgency||50)/50;
+  const mF=(s.mDurationFit||50)/50;
+  const mW=(s.mWaitingOverdue||50)/50;
+  const mN=(s.mNeedsDef||50)/50;
+
+  return rankRaw*mR + urgencyRaw*mU + fitRaw*mF + waitRaw*mW + needsDefRaw*mN;
 }
 
 function scoreTaskWithDomain(task,topTasks,availMins,activeDomain){
@@ -606,7 +640,7 @@ let state={
   closeBlockedCount:0,
   confirmDeleteId:null,
   filterState:null,
-  opDismissed:new Set(),
+  opDismissed:new Map(), // taskId -> expiry timestamp (ms)
   opDomain:'work',
   opAvail:'',
   opResults:null,
@@ -637,11 +671,7 @@ function addTask(form,parentId,placeAfterVal){
     if(topTask)t.domain=topTask.domain;
     // Clamp new task due date to parent's if needed
     const parentTask=findTask(state.tasks,parentId);
-    if(parentTask?.dueDate&&(!t.dueDate||t.dueDate>parentTask.dueDate)){
-      t.dueDate=parentTask.dueDate;
-    } else if(parentTask?.dueDate&&!t.dueDate){
-      t.dueDate=parentTask.dueDate;
-    }
+
     // Assign rank = last among siblings
     const parentTask2=findTask(state.tasks,parentId);
     t.rank=(parentTask2?.children?.length||0)+1;
@@ -674,8 +704,7 @@ function addTask(form,parentId,placeAfterVal){
     });
     tasks=updateTask(tasks,t.id,{rank:insertAfterRank+1});
   }
-  // Propagate due date down to children if any
-  if(t.dueDate)tasks=propagateDueDates(tasks,t.id,t.dueDate);
+
 
   state.tasks=tasks;
   saveTasks(tasks);
@@ -700,8 +729,7 @@ function editTaskFn(id,form){
     preBlockedState:form.state==='blocked'?preBlockedState:null,
     updatedAt:new Date().toISOString(),
   });
-  // Propagate updated due date down to children
-  if(form.dueDate)tasks=propagateDueDates(tasks,id,form.dueDate);
+
   saveTasks(tasks);
   setState({tasks,editTask:null});
 }
@@ -1099,7 +1127,7 @@ function renderTaskNode(task,isTop,expanded,dimmed){
   const hasChildren=task.children?.length>0;
 
   return `
-    <div class="task-row${isTop?' top':''}" onclick="window._editTask('${task.id}')" style="cursor:pointer${dimmed?';opacity:0.4':''}"
+    <div class="task-row${isTop?' top':''}" onclick="window._editTask('${task.id}')" style="cursor:pointer${dimmed?';opacity:0.4':''}${(()=>{const anc=getTopAncestor(state.tasks,task.id);const od=anc?anc.dueDate:task.dueDate;return isOverdue(od)&&!task.closed?';border-left:3px solid '+(task.state==='actionable'?'var(--teal-text)':task.state==='waiting'?'var(--amber-text)':'var(--red-text)'):'';})()}"
 >
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:1px">
         <span class="drag-handle" onpointerdown="event.stopPropagation();window._dragPointerDown(event,'${task.id}')" title="Drag to reorder">⠿</span>
@@ -1332,29 +1360,52 @@ function renderSettings(){
       <select onchange="window._saveSetting('defaultAvail',this.value)" style="font-size:13px;margin-bottom:14px">
         ${['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'].map(a=>`<option ${s.defaultAvail===a?'selected':''}>${a}</option>`).join('')}
       </select>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Snooze duration</div>
+      <select onchange="window._saveSetting('opDismissDuration',parseInt(this.value))" style="font-size:13px">
+        ${[[30,'30 minutes'],[60,'1 hour'],[240,'4 hours'],[1440,'1 day']].map(([val,label])=>`<option value="${val}" ${s.opDismissDuration===val?'selected':''}>${label}</option>`).join('')}
+      </select>
+    </div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">What now? ranking personalization</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:14px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius)">
+        Each factor scores 0–40 pts, then multiplied by its weight (1–100, default 50).<br>
+        <strong>Rank</strong> — relative priority within your domain. Higher rank = more points.<br>
+        <strong>Urgency</strong> — based on ancestor due date. Due today or no date = max. Far future = 0.<br>
+        <strong>Duration fit</strong> — 40 pts if task fits available time or has no duration set, 0 if over.<br>
+        <strong>Waiting overdue</strong> — 40 pts if state is Waiting and ancestor due date is past.<br>
+        <strong>Needs definition</strong> — 40 pts if task has no defined next step (encourages defining it).
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div>
-          <div style="font-size:13px">Include "Needs definition" tasks</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">Surface undefined tasks in What now? as a reminder to define them</div>
+          <div style="font-size:13px">Include needs-definition tasks</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:1px">Surface undefined tasks as a reminder to define them</div>
         </div>
         <button onclick="window._saveSetting('showNeedsDefinitionInOp',!state.settings.showNeedsDefinitionInOp)" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${s.showNeedsDefinitionInOp?'var(--teal-border)':'var(--border2)'};background:${s.showNeedsDefinitionInOp?'var(--teal-bg)':'transparent'};color:${s.showNeedsDefinitionInOp?'var(--teal-text)':'var(--text2)'}">
           ${s.showNeedsDefinitionInOp?'On':'Off'}
         </button>
       </div>
 
-      <div style="margin-bottom:4px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <div style="font-size:12px;color:var(--text2)">Needs definition priority boost</div>
-          <div style="font-size:12px;font-weight:500">+${s.needsDefinitionBoost} pts</div>
-        </div>
-        <input type="range" min="0" max="40" step="5" value="${s.needsDefinitionBoost}"
-          oninput="window._saveSettingDebounced('needsDefinitionBoost',parseInt(this.value))"
-          style="width:100%"/>
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:2px">
-          <span>No boost</span><span>Compete with actionable</span>
-        </div>
-      </div>
+      ${[
+        ['mRank','Rank weight','mRank'],
+        ['mUrgency','Urgency weight','mUrgency'],
+        ['mDurationFit','Duration fit weight','mDurationFit'],
+        ['mWaitingOverdue','Waiting overdue weight','mWaitingOverdue'],
+        ['mNeedsDef','Needs definition weight','mNeedsDef'],
+      ].map(([key,label])=>`
+        <div style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+            <div style="font-size:12px;color:var(--text2)">${label}</div>
+            <div style="font-size:12px;font-weight:500">${s[key]||50}</div>
+          </div>
+          <input type="range" min="1" max="100" step="1" value="${s[key]||50}"
+            oninput="window._saveSettingDebounced('${key}',parseInt(this.value))"
+            style="width:100%"/>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:1px">
+            <span>Minimize</span><span>Default (50)</span><span>Maximize</span>
+          </div>
+        </div>`).join('')}
     </div>
 
     <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
@@ -1498,10 +1549,10 @@ function renderOpMode(){
   const controlsBar=`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <div style="display:flex;gap:4px">
-        <button onclick="setState({opDomain:'work',opResults:null,opDismissed:new Set()})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.opDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.opDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
-        <button onclick="setState({opDomain:'personal',opResults:null,opDismissed:new Set()})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.opDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.opDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.opDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
+        <button onclick="setState({opDomain:'work',opResults:null,opDismissed:new Map()})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.opDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.opDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
+        <button onclick="setState({opDomain:'personal',opResults:null,opDismissed:new Map()})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.opDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.opDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.opDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
       </div>
-      <select onchange="setState({opAvail:this.value,opResults:null,opDismissed:new Set()})" style="font-size:12px;padding:4px 8px;flex:1;min-width:100px">
+      <select onchange="setState({opAvail:this.value,opResults:null,opDismissed:new Map()})" style="font-size:12px;padding:4px 8px;flex:1;min-width:100px">
         <option value="">Any duration</option>
         ${['15 min','30 min','1 hr','2 hrs','Half day','All day'].map(a=>`<option ${state.opAvail===a?'selected':''}>${a}</option>`).join('')}
       </select>
@@ -1514,7 +1565,11 @@ function renderOpMode(){
 
   if(state.opResults){
     const results=state.opResults;
-    const visible=results.filter(r=>!state.opDismissed.has(r.task.id));
+    const now=Date.now();
+    const visible=results.filter(r=>{
+      const exp=state.opDismissed.get(r.task.id);
+      return!exp||exp<now;
+    });
     return controlsBar+`
       ${visible.length===0?'<div class="loading" style="padding:20px">Finding more tasks…</div>':visible.map((r,i)=>`
         <div class="op-card${state.opChosen===i?' chosen-'+state.opDomain:''}" style="position:relative;cursor:pointer" onclick="setState({opChosen:${i}})">
@@ -1643,10 +1698,10 @@ function render(){
         ${state.filterState==='smart'?`
           <div style="display:flex;align-items:center;gap:8px;padding:8px 0 4px;flex-wrap:wrap">
             <div style="display:flex;gap:4px">
-              <button onclick="setState({opDomain:'work',opResults:null,opDismissed:new Set()})" style="font-size:11px;padding:3px 10px;border-radius:99px;border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.opDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.opDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
-              <button onclick="setState({opDomain:'personal',opResults:null,opDismissed:new Set()})" style="font-size:11px;padding:3px 10px;border-radius:99px;border:0.5px solid ${state.opDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.opDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.opDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
+              <button onclick="setState({opDomain:'work',opResults:null,opDismissed:new Map()})" style="font-size:11px;padding:3px 10px;border-radius:99px;border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.opDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.opDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
+              <button onclick="setState({opDomain:'personal',opResults:null,opDismissed:new Map()})" style="font-size:11px;padding:3px 10px;border-radius:99px;border:0.5px solid ${state.opDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.opDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.opDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
             </div>
-            <select onchange="setState({opAvail:this.value,opResults:null,opDismissed:new Set()})" style="font-size:11px;padding:3px 8px">
+            <select onchange="setState({opAvail:this.value,opResults:null,opDismissed:new Map()})" style="font-size:11px;padding:3px 8px">
               <option value="">Any duration</option>
               ${['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'].map(a=>`<option ${state.opAvail===a?'selected':''}>${a}</option>`).join('')}
             </select>
@@ -1679,7 +1734,11 @@ function render(){
             if(state.opLoading&&state.filterState==='smart')return`<div class="loading">Scoring your tasks<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>`;
             if(state.filterState==='smart'){
               if(!state.opResults)return`<div class="empty">Click "Show tasks →" to get your prioritized list.</div>`;
-              const visible=state.opResults.filter(r=>!state.opDismissed.has(r.task.id));
+              const nowMs=Date.now();
+          const visible=state.opResults.filter(r=>{
+            const exp=state.opDismissed.get(r.task.id);
+            return!exp||exp<nowMs;
+          });
               if(!visible.length)return`<div class="loading" style="padding:20px">Finding more tasks…</div>`;
               return visible.map((r,i)=>{
                 const task=r.task;
@@ -1708,6 +1767,7 @@ function render(){
                     </div>
                     <div class="task-actions" onclick="event.stopPropagation()">
                       <button class="ghost" onclick="window._editTask('${task.id}')" title="Edit">✎</button>
+                      <button class="ghost" onclick="event.stopPropagation();window._opDismiss('${task.id}')" title="Not now — snooze" style="font-size:13px;color:var(--text3)">⊘</button>
                       <button class="ghost" onclick="event.stopPropagation();window._opDone('${task.id}')" title="Mark done" style="font-size:13px;color:var(--teal-text)">✓</button>
                     </div>
                   </div>
@@ -1978,7 +2038,7 @@ window._toggleSmartFilter=function(forceOn){
   const domain=getContextDomain();
   state={...state,filterState:'smart',opDomain:domain,
     opAvail:state.opAvail||state.settings.defaultAvail,
-    opResults:null,opChosen:null,opLoading:false,opDismissed:new Set()};
+    opResults:null,opChosen:null,opLoading:false,opDismissed:new Map()};
   render();
   const flat=flattenTasks(state.tasks);
   const hasActionable=flat.some(t=>!t.closed&&(t.state==='actionable'||(t.state==='waiting'&&isOverdue(t.dueDate||t.waitingBy))||needsDefinition(t)));
@@ -2174,13 +2234,25 @@ function propagateDueDates(tasks,taskId,dueDate){
   return tasks;
 }
 
+window._opDismiss=function(taskId){
+  const durationMs=(state.settings.opDismissDuration||60)*60*1000;
+  const expiry=Date.now()+durationMs;
+  const newDismissed=new Map(state.opDismissed);
+  newDismissed.set(taskId,expiry);
+  const _now=Date.now();
+  const stillVisible=(state.opResults||[]).filter(r=>{const e=newDismissed.get(r.task.id);return!e||e<_now;});
+  state={...state,opDismissed:newDismissed,opChosen:null};
+  if(stillVisible.length===0)window._runOp();
+  else render();
+};
+
 window._opDone=function(taskId){
   const task=findTask(state.tasks,taskId);
   if(!task)return;
   const isTopLevel=!findParent(state.tasks,taskId);
   // For top-level tasks: close (if no open subtasks), else just dismiss from view
   // For subtasks: toggle closed
-  const newDismissed=new Set(state.opDismissed);
+  const newDismissed=new Map(state.opDismissed);
   newDismissed.add(taskId);
   if(isTopLevel){
     const openCount=countOpenSubtasks(task);
@@ -2204,7 +2276,8 @@ window._opDone=function(taskId){
     state={...state,tasks,opDismissed:newDismissed};
   }
   // If all visible results are now dismissed, auto re-run
-  const stillVisible=(state.opResults||[]).filter(r=>!state.opDismissed.has(r.task.id));
+  const _now=Date.now();
+  const stillVisible=(state.opResults||[]).filter(r=>{const e=state.opDismissed.get(r.task.id);return!e||e<_now;});
   if(stillVisible.length===0){
     render();
     setTimeout(()=>window._runOp(),600);
@@ -2287,8 +2360,9 @@ window._runOp=async function(){
   function crossDomainQualifies(t){
     if(!cs.crossDomainBleed)return false;
     if(t.domain===state.opDomain)return false;
-    // Due date threshold
-    const due=t.dueDate||t.waitingBy;
+    // Due date threshold — use top-level ancestor date (Option C)
+    const ancTask=getTopAncestor(state.tasks,t.id)||t;
+    const due=ancTask.dueDate||t.waitingBy;
     if(!due)return false;
     const daysUntil=Math.floor((new Date(due)-new Date())/(86400000));
     if(daysUntil>cs.crossDomainDaysUntilDue)return false;
@@ -2308,11 +2382,18 @@ window._runOp=async function(){
     }
     return true;
   }
+  // Option C: only leaf tasks surface in What now?
+  // A task is a leaf if it has no open (non-closed) children
+  function isLeafTask(t){
+    const openChildren=(t.children||[]).filter(c=>!c.closed);
+    return openChildren.length===0;
+  }
   const candidates=flat.filter(t=>{
     if(t.closed)return false;
     if(t.state==='blocked')return false;
+    if(!isLeafTask(t))return false; // has open children — not directly actionable
     if(t.domain===state.opDomain&&t.state==='actionable')return true;
-    if(t.domain===state.opDomain&&t.state==='waiting'&&isOverdue(t.dueDate||t.waitingBy))return true;
+    if(t.domain===state.opDomain&&t.state==='waiting'&&isOverdue((getTopAncestor(state.tasks,t.id)||t).dueDate||t.waitingBy))return true;
     if(state.settings.showNeedsDefinitionInOp&&t.domain===state.opDomain&&needsDefinition(t))return true;
     if(crossDomainQualifies(t))return true;
     return false;
