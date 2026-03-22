@@ -51,10 +51,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--text3)}
 textarea{resize:vertical;min-height:64px}
 .app{max-width:660px;margin:0 auto;padding:16px 16px 0;padding-top:max(16px,env(safe-area-inset-top));height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .header{display:flex;align-items:center;justify-content:space-between;padding:4px 0 14px;border-bottom:0.5px solid var(--border);margin-bottom:16px}
-.header h1{font-size:16px;font-weight:500}
-.mode-tabs{display:flex;gap:3px;background:var(--bg2);padding:3px;border-radius:var(--radius);border:0.5px solid var(--border)}
-.mode-tab{font-size:12px;font-weight:500;padding:4px 14px;border-radius:6px;border:none;background:transparent;color:var(--text2);cursor:pointer;transition:all 0.15s}
-.mode-tab.active{background:var(--bg);color:var(--text);border:0.5px solid var(--border)}
+.header h1{font-size:16px;font-weight:500;flex:1;min-width:0}
+.header-actions{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.icon-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);border:0.5px solid transparent;background:transparent;color:var(--text2);cursor:pointer;font-size:15px;position:relative;transition:all 0.15s}
+.icon-btn:hover{background:var(--bg2);border-color:var(--border);color:var(--text)}
+.icon-btn.active{background:var(--bg2);border-color:var(--border2);color:var(--text)}
+.icon-btn-badge{position:absolute;top:2px;right:2px;background:var(--text2);color:var(--bg);font-size:9px;font-weight:600;border-radius:99px;padding:0 4px;min-width:14px;height:14px;display:flex;align-items:center;justify-content:center;line-height:1}
 .domain-tabs{display:flex;gap:6px;margin-bottom:14px}
 .domain-tab{font-size:12px;padding:4px 14px;border-radius:99px;border:0.5px solid var(--border2);color:var(--text2);cursor:pointer;background:transparent;transition:all 0.15s}
 .domain-tab:hover{background:var(--bg2)}
@@ -628,7 +630,10 @@ let state={
   tasks:loadTasks(),
   archive:loadArchive(),
   settings:loadSettings(),
-  mode:'org',           // 'org' | 'archive' | 'settings'
+  mode:'org',           // 'org' only now — archive/settings are modals
+  showArchive:false,
+  showSettings:false,
+  archiveTask:null,     // task being viewed in archive detail
   activeDomain:'work',
   showModal:false,
   modalParentId:null,
@@ -1244,7 +1249,7 @@ function renderArchiveView(){
       const expanded=archiveExpandedSet.has(t.id);
       return`
       <div>
-        <div class="task-row" style="opacity:0.65;cursor:default">
+        <div class="task-row" style="opacity:0.65;cursor:pointer" onclick="setState({archiveTask:${JSON.stringify(t).replace(/'/g,'\'').replace(/`/g,'\`')}})">
           <button class="expand-btn" onclick="event.stopPropagation();window._toggleArchiveExpand('${t.id}')">${hasChildren?(expanded?'▾':'▸'):'·'}</button>
           <div class="task-main">
             <div class="task-title" style="text-decoration:line-through">${escHtml(t.title)}</div>
@@ -1652,10 +1657,12 @@ function render(){
     <div class="app">
       <div class="header">
         <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.9.0-alpha · March 22, 2026 4:56 AM UTC</span></h1>
-        <div class="mode-tabs">
-          <button class="mode-tab${state.mode==='org'?' active':''}" onclick="setState({mode:'org'})">Organize</button>
-          <button class="mode-tab${state.mode==='archive'?' active':''}" onclick="setState({mode:'archive'})">Archive${state.archive.length>0?` (${state.archive.length})`:''}</button>
-          <button class="mode-tab${state.mode==='settings'?' active':''}" onclick="setState({mode:'settings'})">⚙</button>
+        <div class="header-actions">
+          <button class="icon-btn${state.showArchive?' active':''}" onclick="setState({showArchive:!state.showArchive,showSettings:false,archiveTask:null})" title="Archive">
+            🗃
+            ${state.archive.length>0?`<span class="icon-btn-badge">${state.archive.length}</span>`:''}
+          </button>
+          <button class="icon-btn${state.showSettings?' active':''}" onclick="setState({showSettings:!state.showSettings,showArchive:false})" title="Settings">⚙</button>
         </div>
       </div>
 
@@ -1671,7 +1678,7 @@ function render(){
         </div>`:'')}
 
 
-      ${state.mode==='org'?`
+      ${(()=>{return`
         <div style="flex-shrink:0">
           <div class="stats-row">
           <div class="stat${state.filterState===null?' stat-active':''}" onclick="setState({filterState:null})" style="cursor:pointer">
@@ -1782,7 +1789,7 @@ function render(){
           })()}
         </div>
 
-      `:(state.mode==='archive'?`<div style="flex:1;overflow-y:auto;padding-bottom:16px">${renderArchiveView()}</div>`:`<div id="settings-panel" style="flex:1;overflow-y:auto;padding-bottom:16px">${renderSettings()}</div>`)}
+`})()}
     </div>
 
     ${state.showModal?`
@@ -1798,6 +1805,55 @@ function render(){
         <div class="modal">
           <h2>Edit task</h2>
           ${renderForm({initial:state.editTask,isEdit:true})}
+        </div>
+      </div>`:''}
+
+    ${state.showArchive?`
+      <div class="overlay" onclick="if(event.target===this)setState({showArchive:false,archiveTask:null})">
+        <div class="modal" style="max-width:560px">
+          ${state.archiveTask?(()=>{
+            const t=state.archiveTask;
+            const hasChildren=t.children?.length>0;
+            return`
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+                <button class="ghost" onclick="setState({archiveTask:null})" style="font-size:13px">← Back</button>
+                <h2 style="margin-bottom:0;flex:1">${escHtml(t.title)}</h2>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+                <span class="badge b-neutral">Archived</span>
+                <span class="badge" style="${t.domain==='work'?'background:var(--blue-bg);color:var(--blue-text)':'background:var(--teal-bg);color:var(--teal-text)'}">${t.domain==='work'?'Work':'Personal'}</span>
+                ${t.duration?`<span class="badge b-neutral">${t.duration}</span>`:''}
+                ${t.dueDate?`<span class="badge b-neutral">Due ${fmtDate(t.dueDate)}</span>`:''}
+                ${t.closedAt?`<span class="badge b-neutral">Completed ${fmtDate(t.closedAt.slice(0,10))}</span>`:''}
+              </div>
+              ${t.notes?`<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;padding:10px 12px;background:var(--bg2);border-radius:var(--radius)">${escHtml(t.notes)}</div>`:''}
+              ${hasChildren?`
+                <div class="section-label" style="margin-bottom:8px">Subtasks</div>
+                ${renderArchiveSubtasks(t.children,0)}
+              `:''}
+              <div class="btn-row" style="margin-top:16px">
+                <button class="ghost danger-btn" onclick="if(confirm('Delete permanently?'))window._deleteArchived('${t.id}')">Delete permanently</button>
+                <button onclick="window._restoreArchived('${t.id}')">↩ Restore</button>
+              </div>`;
+          })():`
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+              <h2 style="margin-bottom:0">Archive (${state.archive.length})</h2>
+              <button class="ghost" onclick="setState({showArchive:false})" style="font-size:16px;padding:2px 8px">×</button>
+            </div>
+            ${renderArchiveView()}`}
+        </div>
+      </div>`:''}
+
+    ${state.showSettings?`
+      <div class="overlay" onclick="if(event.target===this)setState({showSettings:false})">
+        <div class="modal" style="max-width:520px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <h2 style="margin-bottom:0">Settings</h2>
+            <button class="ghost" onclick="setState({showSettings:false})" style="font-size:16px;padding:2px 8px">×</button>
+          </div>
+          <div id="settings-panel" style="max-height:70vh;overflow-y:auto">
+            ${renderSettings()}
+          </div>
         </div>
       </div>`:''}
 
@@ -1833,6 +1889,7 @@ function render(){
   const savedTreeScroll=treeEl?treeEl.scrollTop:0;
   const settingsEl=document.getElementById('settings-panel');
   const savedSettingsScroll=settingsEl?settingsEl.scrollTop:0;
+  // (settings now in modal — scroll restore handled by modal itself)
   const opEl=document.getElementById('op-mode');
   const savedOpScroll=opEl?opEl.scrollTop:0;
   const archiveEl=document.querySelector('[id="archive-panel"]');
@@ -2125,12 +2182,12 @@ window._restoreArchived=function(id){
   restored.rank=state.tasks.filter(t=>t.domain===task.domain).length+1;
   const tasks=[...state.tasks,restored];
   saveTasks(tasks);saveArchive(archive);
-  setState({tasks,archive});
+  setState({tasks,archive,archiveTask:null,showArchive:archive.length>0});
 };
 window._deleteArchived=function(id){
   const archive=state.archive.filter(t=>t.id!==id);
   saveArchive(archive);
-  setState({archive});
+  setState({archive,archiveTask:null,showArchive:archive.length>0});
 };
 window._confirmMove=function(){
   const target=document.getElementById('move-target')?.value||'';
@@ -2207,32 +2264,11 @@ window._checkDueDate=function(input){
   } else if(parentId){
     parentTask=findTask(state.tasks,parentId);
   }
-  if(!parentTask||!parentTask.dueDate)return;
-  if(input.value&&input.value>parentTask.dueDate){
-    const warn=document.getElementById('f-due-warn');
-    if(warn){warn.textContent=`Due date cannot be after the due date of the parent task (${parentTask.dueDate}).`;warn.style.display='block';}
-    input.value=parentTask.dueDate;
-    setTimeout(()=>{if(warn)warn.style.display='none';},3000);
-  }
+  // Option C: no constraint on child due dates vs parent due dates
+  // Subtask dates are personal planning aids only
 };
 
-// Propagate a due date down through all descendants recursively
-// Only updates children with no due date, or a due date after the parent's
-function propagateDueDates(tasks,taskId,dueDate){
-  const task=findTask(tasks,taskId);
-  if(!task||!task.children?.length)return tasks;
-  for(const child of task.children){
-    const childDue=child.dueDate;
-    if(!childDue||childDue>dueDate){
-      tasks=updateTask(tasks,child.id,{dueDate});
-    }
-    tasks=propagateDueDates(tasks,child.id,
-      // pass the child's effective due date down (min of child and parent)
-      (!childDue||childDue>dueDate)?dueDate:childDue
-    );
-  }
-  return tasks;
-}
+
 
 window._opDismiss=function(taskId){
   const durationMs=(state.settings.opDismissDuration||60)*60*1000;
