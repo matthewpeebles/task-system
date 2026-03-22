@@ -2239,11 +2239,11 @@ window._opDismiss=function(taskId){
   const expiry=Date.now()+durationMs;
   const newDismissed=new Map(state.opDismissed);
   newDismissed.set(taskId,expiry);
-  const _now=Date.now();
-  const stillVisible=(state.opResults||[]).filter(r=>{const e=newDismissed.get(r.task.id);return!e||e<_now;});
-  state={...state,opDismissed:newDismissed,opChosen:null};
-  if(stillVisible.length===0)window._runOp();
-  else render();
+  // Remove from current results so UI updates immediately
+  const newResults=(state.opResults||[]).filter(r=>r.task.id!==taskId);
+  state={...state,opDismissed:newDismissed,opResults:newResults,opChosen:null};
+  // Always re-run to get a fresh non-dismissed candidate to fill the slot
+  window._runOp();
 };
 
 window._opDone=function(taskId){
@@ -2398,9 +2398,16 @@ window._runOp=async function(){
     if(crossDomainQualifies(t))return true;
     return false;
   });
-  // Deduplicate by id in case a task appears via multiple paths
+  // Exclude currently snoozed tasks before sending to AI
+  const _nowMs=Date.now();
   const seenIds=new Set();
-  const uniqueCandidates=candidates.filter(t=>{if(seenIds.has(t.id))return false;seenIds.add(t.id);return true;});
+  const uniqueCandidates=candidates.filter(t=>{
+    if(seenIds.has(t.id))return false;
+    seenIds.add(t.id);
+    const exp=state.opDismissed.get(t.id);
+    if(exp&&exp>_nowMs)return false; // still snoozed
+    return true;
+  });
   if(!uniqueCandidates.length){alert('No actionable tasks found. Add some in Organize mode.');return;}
   setState({opLoading:true,opResults:null,opChosen:null});
   try{
