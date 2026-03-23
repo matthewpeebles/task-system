@@ -1145,10 +1145,10 @@ function renderTaskNode(task,isTop,expanded,dimmed){
         </div>
         <div class="task-meta">
           <span class="badge b-neutral">${getRankLabel(state.tasks,task.id)}</span>
-          <span class="badge ${STATE_BADGE[task.state]}" onclick="event.stopPropagation();window._cycleState('${task.id}')" title="Click to cycle actionability" style="cursor:pointer">${STATE_LABELS[task.state]}</span>
+          ${!task.closed?`<span class="badge ${STATE_BADGE[task.state]}" onclick="event.stopPropagation();window._cycleState('${task.id}')" title="Click to cycle actionability" style="cursor:pointer">${STATE_LABELS[task.state]}</span>`:''}
           ${task.duration?`<span class="badge b-neutral">${task.duration}</span>`:''}
-          ${task.dueDate?`<span class="badge ${dueDateOverdue?'b-overdue':'b-neutral'}">${task.state==='waiting'?'Expected by':'Due'} ${fmtDate(task.dueDate)}</span>`:''}
-          ${task.state==='waiting'&&task.waitingWho?`<span class="badge b-waiting">↻ ${escHtml(task.waitingWho)}</span>`:''}
+          ${task.dueDate&&!task.closed?`<span class="badge ${dueDateOverdue?'b-overdue':'b-neutral'}">${task.state==='waiting'?'Expected by':'Due'} ${fmtDate(task.dueDate)}</span>`:''}
+          ${task.state==='waiting'&&task.waitingWho&&!task.closed?`<span class="badge b-waiting">↻ ${escHtml(task.waitingWho)}</span>`:''}
           ${overdue?`<span class="badge b-overdue">Overdue — follow up</span>`:''}
         </div>
         ${task.notes?`<div class="task-notes">${escHtml(task.notes.slice(0,120))}${task.notes.length>120?'…':''}</div>`:''}
