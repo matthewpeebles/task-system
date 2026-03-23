@@ -1117,7 +1117,9 @@ window._dedupCheck=function(title,isEdit){
   if(!box)return;
   if(isEdit||!title||title.trim().length<4){box.style.display='none';return;}
   _dedupTimer=setTimeout(()=>{
-    const matches=findSimilar(state.tasks,title.trim());
+    const domain=document.getElementById('f-domain')?.value||state.activeDomain;
+    const domainTasks=state.tasks.filter(t=>t.domain===domain);
+    const matches=findSimilar(domainTasks,title.trim());
     if(matches.length===0){box.style.display='none';return;}
     box.innerHTML='<strong>Similar tasks already exist — is this a duplicate or subtask?</strong><br>'
       +matches.map(t=>`• ${escHtml(t.title)} <span style="opacity:.7">(${t.domain})</span>`).join('<br>');
@@ -1669,7 +1671,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.9.0-alpha · March 22, 2026 4:56 AM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.9.1-alpha · March 23, 2026 1:29 AM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
