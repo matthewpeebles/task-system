@@ -1225,14 +1225,22 @@ function renderTree(tasks,depth,expandedSet,filter){
 // ── Operation mode UI ──────────────────────────────────────────────────────
 function renderArchiveSubtasks(children,depth){
   if(!children?.length)return'';
-  return children.map(c=>`
-    <div style="display:flex;align-items:flex-start;gap:6px;padding:6px 10px;border-radius:var(--radius);background:var(--bg2);border:0.5px solid var(--border);opacity:0.6;margin-bottom:3px">
-      <div style="width:18px;flex-shrink:0;color:var(--text3);font-size:10px;padding-top:2px">${c.closed?'✓':'○'}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500;text-decoration:${c.closed?'line-through':'none'};opacity:${c.closed?'0.6':'1'}">${escHtml(c.title)}</div>
-        ${c.children?.length?`<div style="margin-top:4px;padding-left:12px;border-left:0.5px solid var(--border)">${renderArchiveSubtasks(c.children,depth+1)}</div>`:''}
+  return children.map(c=>{
+    const hasKids=c.children?.length>0;
+    const expanded=archiveExpandedSet.has(c.id);
+    return`
+    <div style="margin-bottom:3px">
+      <div style="display:flex;align-items:flex-start;gap:6px;padding:6px 10px;border-radius:var(--radius);background:var(--bg2);border:0.5px solid var(--border);opacity:0.75;cursor:pointer"
+        onclick="event.stopPropagation();window._viewArchivedTask('${c.id}')">
+        <button class="expand-btn" onclick="event.stopPropagation();window._toggleArchiveExpand('${c.id}')" style="flex-shrink:0">${hasKids?(expanded?'▾':'▸'):'·'}</button>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;text-decoration:${c.closed?'line-through':'none'};color:${c.closed?'var(--text3)':'var(--text)'}">${escHtml(c.title)}</div>
+          ${c.notes?`<div style="font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4">${escHtml(c.notes.slice(0,80))}${c.notes.length>80?'…':''}</div>`:''}
+        </div>
       </div>
-    </div>`).join('');
+      ${hasKids&&expanded?`<div style="padding-left:16px;margin-top:2px;border-left:0.5px solid var(--border)">${renderArchiveSubtasks(c.children,depth+1)}</div>`:''}
+    </div>`;
+  }).join('');
 }
 
 function renderArchiveView(){
@@ -1249,7 +1257,7 @@ function renderArchiveView(){
       const expanded=archiveExpandedSet.has(t.id);
       return`
       <div>
-        <div class="task-row" style="opacity:0.65;cursor:pointer" onclick="setState({archiveTask:${JSON.stringify(t).replace(/'/g,'\'').replace(/`/g,'\`')}})">
+        <div class="task-row" style="opacity:0.65;cursor:pointer" onclick="window._viewArchivedTask('${t.id}')">
           <button class="expand-btn" onclick="event.stopPropagation();window._toggleArchiveExpand('${t.id}')">${hasChildren?(expanded?'▾':'▸'):'·'}</button>
           <div class="task-main">
             <div class="task-title" style="text-decoration:line-through">${escHtml(t.title)}</div>
@@ -1305,7 +1313,12 @@ function renderSettings(){
   }).join('');
 
   return`<div style="max-width:480px">
-    <div style="font-size:15px;font-weight:500;margin-bottom:16px">Settings</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:500">Settings</div>
+      <button onclick="setState({showSettings:false,showArchive:true,archiveTask:null})" style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px">
+        🗃 Archive${state.archive.length>0?` (${state.archive.length})`:''} →
+      </button>
+    </div>
 
     <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Work schedule</div>
@@ -1658,16 +1671,14 @@ function render(){
       <div class="header">
         <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.9.0-alpha · March 22, 2026 4:56 AM UTC</span></h1>
         <div class="header-actions">
-          <button class="icon-btn${state.showArchive?' active':''}" onclick="setState({showArchive:!state.showArchive,showSettings:false,archiveTask:null})" title="Archive">
-            🗃
-            ${state.archive.length>0?`<span class="icon-btn-badge">${state.archive.length}</span>`:''}
-          </button>
+          <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
+          <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
           <button class="icon-btn${state.showSettings?' active':''}" onclick="setState({showSettings:!state.showSettings,showArchive:false})" title="Settings">⚙</button>
         </div>
       </div>
 
       ${!gdrive.clientId?`
-        <div onclick="setState({mode:'settings'});setTimeout(()=>{const el=document.getElementById('gdrive-setup');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},80)" style="display:flex;align-items:center;justify-content:space-between;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--teal-text);cursor:pointer">
+        <div onclick="setState({showSettings:true,showArchive:false});setTimeout(()=>{const el=document.getElementById('gdrive-setup');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},80)" style="display:flex;align-items:center;justify-content:space-between;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--teal-text);cursor:pointer">
           <span>Connect Google Drive to keep your tasks synced across all your devices →</span>
         </div>`:(gdrive.clientId&&!gdrive.token?`
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--amber-text)">
@@ -1716,11 +1727,6 @@ function render(){
               ${state.opLoading?'Scoring…':state.opResults?'Re-run →':'Show tasks →'}
             </button>
           </div>`:''}
-
-        <div class="domain-tabs">
-          <button class="domain-tab${state.activeDomain==='work'?' work':''}" onclick="setState({activeDomain:'work'})">Work</button>
-          <button class="domain-tab${state.activeDomain==='personal'?' personal':''}" onclick="setState({activeDomain:'personal'})">Personal</button>
-        </div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div style="display:flex;align-items:center;gap:8px">
@@ -1832,8 +1838,10 @@ function render(){
                 ${renderArchiveSubtasks(t.children,0)}
               `:''}
               <div class="btn-row" style="margin-top:16px">
-                <button class="ghost danger-btn" onclick="if(confirm('Delete permanently?'))window._deleteArchived('${t.id}')">Delete permanently</button>
-                <button onclick="window._restoreArchived('${t.id}')">↩ Restore</button>
+                ${state.archive.some(a=>a.id===t.id)?`
+                  <button class="ghost danger-btn" onclick="if(confirm('Delete permanently?'))window._deleteArchived('${t.id}')">Delete permanently</button>
+                  <button onclick="window._restoreArchived('${t.id}')">↩ Restore</button>
+                `:`<div style="font-size:11px;color:var(--text3)">Subtask of an archived task — restore or delete the parent.</div>`}
               </div>`;
           })():`
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
@@ -2173,6 +2181,23 @@ window._closeTop=function(id){
 };
 window._clearCloseBlock=function(){setState({closeBlockedId:null,closeBlockedCount:0});};
 window._toggleSubClosed=function(id){toggleSubtaskClosed(id);};
+// Find a task anywhere in the archive tree (including subtasks)
+function findInArchive(archive,id){
+  for(const t of archive){
+    if(t.id===id)return t;
+    if(t.children?.length){
+      const found=findInArchive(t.children,id);
+      if(found)return found;
+    }
+  }
+  return null;
+}
+
+window._viewArchivedTask=function(id){
+  const task=findInArchive(state.archive,id);
+  if(task)setState({archiveTask:task});
+};
+
 window._restoreArchived=function(id){
   const task=state.archive.find(t=>t.id===id);
   if(!task)return;
