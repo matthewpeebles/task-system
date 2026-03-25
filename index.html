@@ -810,7 +810,7 @@ function reopenAncestors(tasks,id){
   const parent=findParent(tasks,id);
   if(!parent)return tasks;
   if(parent.closed){
-    tasks=updateTask(tasks,parent.id,{closed:false});
+    tasks=updateTask(tasks,parent.id,{closed:false,updatedAt:new Date().toISOString()});
   }
   return reopenAncestors(tasks,parent.id);
 }
@@ -860,15 +860,14 @@ function toggleSubtaskClosed(id){
       return;
     }
     setState({closeBlockedId:null,closeBlockedCount:0});
-    let tasks=updateTask(state.tasks,id,{closed:true});
+    let tasks=updateTask(state.tasks,id,{closed:true,updatedAt:new Date().toISOString()});
     tasks=unblockDependents(tasks,id);
     saveTasks(tasks);
     setState({tasks});
   } else {
     // Re-opening: clear block banner, reopen this task and any closed ancestors
     setState({closeBlockedId:null,closeBlockedCount:0});
-    let tasks=updateTask(state.tasks,id,{closed:false});
-    // Reopen any closed ancestors up the tree
+    let tasks=updateTask(state.tasks,id,{closed:false,updatedAt:new Date().toISOString()});
     tasks=reopenAncestors(tasks,id);
     saveTasks(tasks);
     setState({tasks});
@@ -1697,7 +1696,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.9.2-alpha · March 25, 2026 12:09 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.9.3-alpha · March 25, 2026 1:38 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
@@ -2365,7 +2364,7 @@ window._opDone=function(taskId){
     }
   } else {
     // Mark subtask closed
-    let tasks=updateTask(state.tasks,taskId,{closed:true});
+    let tasks=updateTask(state.tasks,taskId,{closed:true,updatedAt:new Date().toISOString()});
     saveTasks(tasks);
     state={...state,tasks,opDismissed:newDismissed};
   }
