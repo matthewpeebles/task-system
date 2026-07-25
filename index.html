@@ -633,7 +633,7 @@ Return ONLY a valid JSON array with no other text, no markdown, no code fences:
 
 crossDomain should be true only if the task is from the opposite domain and is urgent enough to surface anyway.`;
 
-  const res=await fetch('https://api.anthropic.com/v1/messages',{
+  const res=await fetch('https://ts-relay-4f2a.matthew-peebles.workers.dev/',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,messages:[{role:'user',content:prompt}]})
