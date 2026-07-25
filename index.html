@@ -2625,7 +2625,7 @@ window._runOp=async function(){
     setState({opLoading:false,opResults:dedupedResults});
   }catch(e){
     // Fallback scoring
-    const scored=uniqueCandidates.map(t=>({task:t,score:scoreTaskWithDomain(t,state.tasks,availToMins(state.opAvail),state.opDomain),why:'Based on priority rank and due date.', crossDomain:t.domain!==state.opDomain}))
+    const scored=uniqueCandidates.map(t=>({task:t,score:scoreTaskWithDomain(t,state.tasks,availToMins(state.opAvail),state.opDomain),why:'⚠ Offline scoring — AI unavailable.', crossDomain:t.domain!==state.opDomain}))
       .sort((a,b)=>b.score-a.score).slice(0,Math.min(5,uniqueCandidates.length));
     setState({opLoading:false,opResults:scored});
   }
