@@ -1589,6 +1589,23 @@ function renderSettings(){
         6. Copy the Client ID and paste above
       </div>
     </div>
+    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Backup &amp; restore</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">One JSON file with every task, your archive, and your settings. Keep a copy somewhere that isn't this device.</div>
+      ${(()=>{
+        const last=parseInt(localStorage.getItem(BACKUP_KEY)||'0',10);
+        if(!last)return `<div style="font-size:11px;color:var(--amber-text);margin-bottom:10px">No backup yet.</div>`;
+        const days=Math.floor((Date.now()-last)/86400000);
+        const label=days===0?'today':days===1?'yesterday':days+' days ago';
+        return `<div style="font-size:11px;color:${days>=8?'var(--amber-text)':'var(--text3)'};margin-bottom:10px">Last backup: ${label}${days>=8?' \u2014 overdue':''}</div>`;
+      })()}
+      <div style="display:flex;gap:6px">
+        <button class="primary" onclick="window._exportData()" style="flex:1;padding:7px">Export backup</button>
+        <button onclick="window._importPick()" style="padding:7px">Restore&hellip;</button>
+      </div>
+      <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="window._importData(this)"/>
+      <div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.6">Restore overwrites all data on this device. If Drive sync is connected, disconnect first, restore, then reconnect \u2014 otherwise the next sync can merge the old data back in.</div>
+    </div>
   </div>`;
 }
 
@@ -2383,6 +2400,72 @@ window._opDone=function(taskId){
   } else {
     render();
   }
+};
+
+// ── Backup & restore ───────────────────────────────────────────────────────
+const BACKUP_KEY='taskSystem_lastExport';
+
+function buildBackup(){
+  return JSON.stringify({
+    format:'task-system-backup',
+    version:1,
+    exportedAt:new Date().toISOString(),
+    counts:{tasks:flattenTasks(state.tasks).length,archive:(state.archive||[]).length},
+    tasks:state.tasks,
+    archive:state.archive,
+    settings:state.settings,
+    tombstones:loadTombstones()
+  },null,2);
+}
+
+window._exportData=async function(){
+  const json=buildBackup();
+  const name='task-system-backup-'+today()+'.json';
+  const blob=new Blob([json],{type:'application/json'});
+  try{
+    const file=new File([blob],name,{type:'application/json'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:'Task System backup'});
+      localStorage.setItem(BACKUP_KEY,Date.now().toString());
+      render();
+      return;
+    }
+  }catch(e){ if(e&&e.name==='AbortError')return; }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  localStorage.setItem(BACKUP_KEY,Date.now().toString());
+  render();
+};
+
+window._importPick=function(){ document.getElementById('import-file').click(); };
+
+window._importData=function(input){
+  const file=input.files&&input.files[0];
+  input.value='';
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(){
+    let data;
+    try{ data=JSON.parse(reader.result); }
+    catch(e){ alert("That file isn't valid JSON."); return; }
+    if(data.format!=='task-system-backup'||!Array.isArray(data.tasks)){
+      alert("That doesn't look like a Task System backup."); return;
+    }
+    const n=flattenTasks(data.tasks).length;
+    const when=data.exportedAt?new Date(data.exportedAt).toLocaleString():'unknown date';
+    if(!confirm('Replace everything on this device with this backup?\n\nBackup from: '+when+'\nTasks: '+n+'\n\nCurrent data on this device will be overwritten. This cannot be undone.'))return;
+    try{
+      localStorage.setItem(STORAGE_KEY,JSON.stringify(data.tasks));
+      localStorage.setItem(ARCHIVE_KEY,JSON.stringify(data.archive||[]));
+      if(data.settings)localStorage.setItem(SETTINGS_KEY,JSON.stringify(data.settings));
+      if(data.tombstones)localStorage.setItem(TOMBSTONE_KEY,JSON.stringify(data.tombstones));
+    }catch(e){ alert('Could not write to storage: '+e.message); return; }
+    location.reload();
+  };
+  reader.readAsText(file);
 };
 
 window._gdriveConnect=function(){gdriveConnect();};
