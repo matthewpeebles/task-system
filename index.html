@@ -624,7 +624,7 @@ async function getAIRecommendations(candidates,topTasks,domain,avail){
   const prompt=`You are a task prioritization assistant. The user is in "${domain}" mode with "${avail||'unspecified time'}" available now. Cross-domain tasks have already been pre-scored with a ${multiplier.toFixed(1)}x penalty multiplier applied to their raw scores.
 
 Candidate tasks (pre-scored, higher score = more urgent/important):
-${ranked.map(t=>`${t.idx}. [score:${t.score}] "${t.title}" | ${t.domain} | ${t.state}${t.duration?' | '+t.duration:''}${t.due?' | due '+t.due:''}${t.waitingWho?' | waiting on '+t.waitingWho+(t.waitingBy?' by '+t.waitingBy:''):''} | priority rank #${t.rank}`).join('\n')}
+${ranked.map(t=>`${t.idx}. [score:${t.score}] "${t.title}" | ${t.domain} | ${t.state}${t.duration?' | '+t.duration:''}${t.due?' | due '+t.due:''}${t.waitingWho?' | waiting on '+t.waitingWho+(t.waitingBy?' by '+t.waitingBy:''):''} | priority rank #${t.rank}${t.notes?'\n   notes: '+t.notes:''}`).join('\n')}
 
 You MUST return exactly 5 tasks. If fewer than 5 candidates are available, return all of them. Never return fewer than the number of candidates provided. Select the best fit for the user's current context and rank them in order of recommendation.
 
