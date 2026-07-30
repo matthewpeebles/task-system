@@ -617,7 +617,7 @@ async function getAIRecommendations(candidates,topTasks,domain,avail){
     const s=scoreTask(t,topTasks,availToMins(avail));
     const top=getTopAncestor(topTasks,t.id)||t;
     const crossPenalty=t.domain!==domain?(state.settings.crossDomainMultiplier??0.5):1;
-    ${ranked.map(t=>`${t.idx}. [score:${t.score}] "${t.title}" | ${t.domain} | ${t.state}${t.duration?' | '+t.duration:''}${t.due?' | due '+t.due:''}${t.waitingWho?' | waiting on '+t.waitingWho+(t.waitingBy?' by '+t.waitingBy:''):''} | priority rank #${t.rank}${t.notes?'\n   notes: '+t.notes:''}`).join('\n')}
+    return{idx:i+1,id:t.id,title:t.title,domain:t.domain,state:t.state,duration:t.duration||'',due:t.dueDate||'',waitingWho:t.waitingWho||'',waitingBy:t.waitingBy||'',notes:(t.notes||'').replace(/\s+/g,' ').trim().slice(0,300),rank:top.rank||99,score:Math.round(s*crossPenalty)};
   }).sort((a,b)=>b.score-a.score).slice(0,15);
 
   const multiplier=state.settings.crossDomainMultiplier??0.5;
