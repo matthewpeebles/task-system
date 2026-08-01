@@ -782,7 +782,7 @@ async function getAIRecommendations(candidates,topTasks,domain,avail){
   const prompt=`You are a task prioritization assistant. The user is in "${domain}" mode with "${avail||'unspecified time'}" available now. Cross-domain tasks have already been pre-scored with a ${multiplier.toFixed(1)}x penalty multiplier applied to their raw scores.
 
 Candidate tasks (pre-scored, higher score = more urgent/important):
-${ranked.map(t=>`${t.idx}. [score:${t.score}] "${t.title}" | ${t.domain} | ${t.state}${t.duration?' | user duration '+t.duration:''}${t.aiEffortMins?' | est effort '+t.aiEffortMins+'min':''}${t.due?' | due '+t.due:''}${t.waitingWho?' | waiting on '+t.waitingWho+(t.waitingBy?' by '+t.waitingBy:''):''} | priority rank #${t.rank}${t.project?' | project: '+t.project:''}${t.parent?' | parent: '+t.parent:''}${t.aiBlocker?'\n   blocker: '+t.aiBlocker:''}${t.aiNextAction?'\n   next step: '+t.aiNextAction:''}${t.note?'\n   note: '+t.note:''}`).join('\n')}
+${ranked.map(t=>`${t.idx}. [score:${t.score}] "${t.title}" | ${t.domain} | ${t.state}${t.duration?' | user duration '+t.duration:''}${t.aiEffortMins?' | est effort '+t.aiEffortMins+'min':''}${t.due?' | due '+t.due:''}${t.waitingWho?' | waiting on '+t.waitingWho+(t.waitingBy?' by '+t.waitingBy:''):''} | priority rank #${t.rank}${t.project?' | project: '+t.project:''}${t.parent?' | parent: '+t.parent:''}${t.aiBlocker?'\n   blocker: '+t.aiBlocker:''}${t.aiNextAction?'\n   next step: '+t.aiNextAction:''}${t.note?'\n   note: '+t.note:''}`).join('\n\n')}
 
 Notes appear either as a full short note or as an AI summary of a longer one. Note length reflects how much the user happened to write, never importance. Use notes for content — blockers, real effort, the actual next step — never as a priority signal.
 
@@ -792,17 +792,26 @@ Tasks may list a parent or project. Prefer tasks that move a project forward ove
 
 You MUST return exactly 5 tasks. If fewer than 5 candidates are available, return all of them. Never return fewer than the number of candidates provided. Select the best fit for the user's current context and rank them in order of recommendation.
 
-Your reason must describe ONLY the task at that idx. Never mention another task's project, parent, people, or details. Never mention the numeric score, ranking position, or the word "score" — the user cannot see those. If the task's state is not "actionable", do not call it actionable.
+Each candidate is separated by a blank line. Everything indented under a candidate belongs to THAT candidate only. Never carry a note, blocker, next step, person, or project from one candidate to another — adjacent entries are unrelated.
+
+Before writing each reason, copy the task's exact title into the "title" field. Then write a reason that refers only to what is listed under that title. Your reason must describe ONLY the task at that idx. Never mention another task's project, parent, people, or details. Never mention the numeric score, ranking position, or the word "score" — the user cannot see those. If the task's state is not "actionable", do not call it actionable.
 
 Return ONLY a valid JSON array with no other text, no markdown, no code fences:
-[{"idx":1,"why":"One sentence, max 20 words, explaining why this task right now.","crossDomain":false}]
+[{"idx":1,"title":"exact title copied from the candidate list","why":"One sentence, max 20 words, explaining why this task right now.","crossDomain":false}]
 
 crossDomain should be true only if the task is from the opposite domain and is urgent enough to surface anyway.`;
 
   const parsed=JSON.parse(await aiCall(MODEL_FAST,900,prompt));
   return parsed.map(r=>{
-    const src=ranked.find(x=>x.idx===r.idx);
-    if(!src){console.warn('Op Mode: AI returned unknown idx',r.idx);return null;}
+    let src=ranked.find(x=>x.idx===r.idx);
+    if(r.title){
+      const byTitle=ranked.find(x=>x.title===r.title);
+      if(byTitle&&(!src||byTitle.idx!==src.idx)){
+        console.warn('Op Mode: idx/title mismatch — trusting title.',{idx:r.idx,title:r.title,idxTitle:src&&src.title});
+        src=byTitle;
+      }
+    }
+    if(!src){console.warn('Op Mode: AI returned unknown idx',r.idx,r.title);return null;}
     const task=candidates.find(t=>t.id===src.id);
     return{task,why:r.why,crossDomain:r.crossDomain||false};
   }).filter(Boolean);
@@ -1925,7 +1934,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.14.0-alpha · Aug 1, 2026 10:03 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.14.1-alpha · Aug 1, 2026 10:19 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
