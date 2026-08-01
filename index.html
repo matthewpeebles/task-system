@@ -634,10 +634,34 @@ function parseJsonArrayLoose(text){
     if(c==='{')depth++;
     else if(c==='}'){depth--;if(depth===0)lastGood=i;}
   }
-  if(lastGood<0)throw new Error('AI response truncated before any complete item');
-  const salvaged=JSON.parse(text.slice(start,lastGood+1)+']');
-  console.warn('AI response was truncated — recovered',salvaged.length,'item(s)');
-  return salvaged;
+  if(lastGood>=0){
+    try{
+      const salvaged=JSON.parse(text.slice(start,lastGood+1)+']');
+      console.warn('AI response was truncated — recovered',salvaged.length,'item(s)');
+      return salvaged;
+    }catch(e){/* fall through to per-object recovery */}
+  }
+  // Per-object recovery: keep whatever parses, drop what doesn't
+  const out=[];
+  depth=0;inStr=false;esc=false;
+  let objStart=-1;
+  for(let i=start;i<text.length;i++){
+    const c=text[i];
+    if(esc){esc=false;continue;}
+    if(c==='\\'){esc=true;continue;}
+    if(c==='"'){inStr=!inStr;continue;}
+    if(inStr)continue;
+    if(c==='{'){if(depth===0)objStart=i;depth++;}
+    else if(c==='}'){depth--;if(depth===0&&objStart>=0){
+      const chunk=text.slice(objStart,i+1);
+      try{out.push(JSON.parse(chunk));}
+      catch(e){try{out.push(JSON.parse(chunk.replace(/(:\s*")((?:[^"\\]|\\.)*)"(?=\s*[,}])/g,(m,p,v)=>p+v.replace(/"/g,"'")+'"')));}catch(e2){console.warn('Dropped an unparseable item');}}
+      objStart=-1;
+    }}
+  }
+  if(!out.length)throw new Error('Could not recover any items from the AI response');
+  console.warn('AI response was malformed — recovered',out.length,'item(s)');
+  return out;
 }
 
 async function aiCall(model,maxTokens,prompt){
@@ -813,15 +837,15 @@ async function getAIReview(){
     const note=noteForPrompt(t,300);
     const age=t.createdAt?Math.floor((Date.now()-new Date(t.createdAt))/86400000):null;
     const touched=t.updatedAt?Math.floor((Date.now()-new Date(t.updatedAt))/86400000):null;
-    return `${i+1}. "${t.title}" | ${t.domain} | ${t.state}`+
+    return `${i+1}. '${t.title}' | ${t.domain} | ${t.state}`+
       (t.duration?` | user duration ${t.duration}`:'')+
       (t.aiEffortMins?` | est effort ${t.aiEffortMins}min`:'')+
       (t.dueDate?` | due ${t.dueDate}`:' | no due date')+
-      (t.state==='blocked'&&t.blockedBy?` | blocked by: "${(findTask(state.tasks,t.blockedBy)||{}).title||'unknown'}"`:'')+
+      (t.state==='blocked'&&t.blockedBy?` | blocked by: '${(findTask(state.tasks,t.blockedBy)||{}).title||'unknown'}'`:'')+
       (t.waitingWho?` | waiting on ${t.waitingWho}${t.waitingBy?` since ${t.waitingBy}`:''}`:'')+
       (openKids?` | ${openKids} open subtasks`:'')+
-      ((parent&&parent.id!==t.id)?` | parent: "${parent.title}"`:'')+
-      ((top&&top.id!==t.id&&(!parent||top.id!==parent.id))?` | project: "${top.title}"`:'')+
+      ((parent&&parent.id!==t.id)?` | parent: '${parent.title}'`:'')+
+      ((top&&top.id!==t.id&&(!parent||top.id!==parent.id))?` | project: '${top.title}'`:'')+
       ` | rank #${top.rank||99}`+
       (age!==null?` | created ${age}d ago`:'')+
       (touched!==null?` | last edited ${touched}d ago`:'')+
@@ -867,6 +891,8 @@ Return ONLY a valid JSON array, 5 to 7 observations, no markdown or code fences.
 [{"kind":"data","headline":"Max 60 chars, the observation itself","detail":"1-2 sentences. Specific. Name the exact task titles involved.","suggestion":"Max 90 chars, the concrete fix — name the field and the value","taskTitles":["exact title copied from the list above"],"severity":"high"}]
 
 taskTitles must contain the exact titles, copied character-for-character from the list above, of every task the observation refers to.
+
+CRITICAL: never type a double-quote character inside any field value — it breaks the JSON. When naming a task inside detail or suggestion, use single quotes, like 'File Taxes'. The taskTitles array still holds the exact title text with no added quotes.
 
 kind is "data" or "priority". severity is "high", "medium", or "low". Order by severity, highest first. If the list genuinely looks well-tuned, say so in at most one entry — spend the rest on problems.`;
 
@@ -919,7 +945,7 @@ You MUST return exactly 5 tasks. If fewer than 5 candidates are available, retur
 
 Each candidate is separated by a blank line. Everything indented under a candidate belongs to THAT candidate only. Never carry a note, blocker, next step, person, or project from one candidate to another — adjacent entries are unrelated.
 
-Before writing each reason, copy the task's exact title into the "title" field. Then write a reason that refers only to what is listed under that title. Your reason must describe ONLY the task at that idx. Never mention another task's project, parent, people, or details. Never mention the numeric score, ranking position, or the word "score" — the user cannot see those. If the task's state is not "actionable", do not call it actionable.
+Never type a double-quote character inside any field value — it breaks the JSON. Before writing each reason, copy the task's exact title into the "title" field. Then write a reason that refers only to what is listed under that title. Your reason must describe ONLY the task at that idx. Never mention another task's project, parent, people, or details. Never mention the numeric score, ranking position, or the word "score" — the user cannot see those. If the task's state is not "actionable", do not call it actionable.
 
 Return ONLY a valid JSON array with no other text, no markdown, no code fences:
 [{"idx":1,"title":"exact title copied from the candidate list","why":"One sentence, max 20 words, explaining why this task right now.","crossDomain":false}]
@@ -2106,7 +2132,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.17.0-alpha · Aug 1, 2026 11:33 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.17.1-alpha · Aug 1, 2026 11:48 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
