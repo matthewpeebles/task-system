@@ -651,10 +651,11 @@ function summaryIsStale(t){
 }
 function summaryStatus(t){
   const n=normNote(t);
-  if(n.length<SUMMARY_MIN_CHARS||!t.notesSummary)return 'none';
-  if(t.notesHash===noteHash(n))return 'fresh';
-  if(t.summaryFailed)return 'stale';
-  return loadSummaryQueue().includes(t.id)?'pending':'stale';
+  if(n.length<SUMMARY_MIN_CHARS)return 'none';
+  if(t.notesSummary&&t.notesHash===noteHash(n))return 'fresh';
+  if(t.summaryFailed)return 'failed';
+  if(loadSummaryQueue().includes(t.id))return 'pending';
+  return t.notesSummary?'stale':'none';
 }
 
 // What actually gets sent to the AI for a task's notes.
@@ -1251,16 +1252,22 @@ function renderForm(opts){
           placeholder="${stateVal==='not-actionable'?'Use this to think through what needs to happen…':'Additional context…'}">${escHtml(initial.notes||'')}</textarea>
       </div>
 
-${initial.notesSummary?`<div class="form-row" style="margin-top:-4px">
+${(()=>{
+        const st=summaryStatus(initial);
+        if(st==='none')return '';
+        const msg=st==='pending'?` <span style="color:var(--text3)">— updating…</span>`
+          :st==='failed'?` <span style="color:var(--amber-text)">— couldn't generate, will retry</span>`
+          :st==='stale'?` <span style="color:var(--amber-text)">— stale, note changed</span>`:'';
+        return `<div class="form-row" style="margin-top:-4px">
         <div style="font-size:12px;color:var(--text3);line-height:1.55;padding:8px 12px;border-left:2px solid var(--border)">
-          <strong style="color:var(--text2)">Summary</strong>${summaryStatus(initial)==='pending'?` <span style="color:var(--text3)">— updating…</span>`:''}${summaryStatus(initial)==='stale'?` <span style="color:var(--amber-text)">— stale, note changed</span>`:''}
-          ${escHtml(initial.notesSummary)}
+          <strong style="color:var(--text2)">Summary</strong>${msg}
+          ${initial.notesSummary?`<br>${escHtml(initial.notesSummary)}`:''}
           ${initial.aiNextAction?`<br><span style="color:var(--text2)">Next:</span> ${escHtml(initial.aiNextAction)}`:''}
           ${initial.aiBlocker?`<br><span style="color:var(--amber-text)">Blocker:</span> ${escHtml(initial.aiBlocker)}`:''}
           ${initial.aiEffortMins?`<br><span style="color:var(--text2)">Est. effort:</span> ${initial.aiEffortMins} min${initial.aiSuggestDuration?` <span style="color:var(--amber-text)">(differs from your duration)</span>`:''}`:''}
         </div>
-      </div>`:''}
-      ${initial.summaryFailed?`<div class="form-row" style="font-size:11px;color:var(--amber-text);margin-top:-4px">⚠ Summary generation failed — will retry.</div>`:''}
+      </div>`;
+      })()}
       
       <div id="f-due-warn" style="display:none;font-size:11px;color:var(--amber-text);margin-bottom:8px;line-height:1.5"></div>
       <div class="btn-row">
@@ -1867,7 +1874,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.10.4-alpha · Aug 1, 2026 8:22 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.10.5-alpha · Aug 1, 2026 8:31 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
