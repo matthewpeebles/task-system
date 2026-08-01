@@ -786,13 +786,16 @@ function triggerSummary(id){
 }
   
 // ── Review mode ────────────────────────────────────────────────────────────
-const REVIEW_KEY='taskSystem_review';
-function loadReview(){try{const r=localStorage.getItem(REVIEW_KEY);return r?JSON.parse(r):null;}catch(e){return null;}}
-function saveReview(r){try{localStorage.setItem(REVIEW_KEY,JSON.stringify(r));}catch(e){}}
+function reviewKey(d){return 'taskSystem_review_'+(d||state.reviewDomain||'personal');}
+function loadReview(d){try{const r=localStorage.getItem(reviewKey(d));return r?JSON.parse(r):null;}catch(e){return null;}}
+function saveReview(r,d){try{localStorage.setItem(reviewKey(d),JSON.stringify(r));}catch(e){}}
 window._reviewToggle=function(i){
   const r=loadReview(); if(!r||!r.observations[i])return;
   r.observations[i].done=!r.observations[i].done;
   saveReview(r); setState({reviewResults:r.observations});
+};
+window._reviewSetDomain=function(d){
+  setState({reviewDomain:d,reviewResults:null,reviewError:null});
 };
 window._reviewOpenTask=function(title){
   const t=flattenTasks(state.tasks).find(x=>x.title===title);
@@ -800,7 +803,8 @@ window._reviewOpenTask=function(title){
 };
 
 async function getAIReview(){
-  const flat=flattenTasks(state.tasks).filter(t=>!t.closed);
+  const dom=state.reviewDomain||'personal';
+  const flat=flattenTasks(state.tasks).filter(t=>!t.closed&&t.domain===dom);
   if(!flat.length)return[];
   const lines=flat.map((t,i)=>{
     const top=getTopAncestor(state.tasks,t.id)||t;
@@ -825,40 +829,57 @@ async function getAIReview(){
       (note?`\n   note: ${note}`:'');
   });
 
-  const prompt=`You are reviewing someone's entire task system with them during their weekly review. Today is ${today()}.
+  const prompt=`You are helping someone tune their ${dom} task list. Today is ${today()}.
 
-Your job is to challenge their prioritization, not to agree with it. Be specific and direct. Reference tasks by their exact title.
+Their system has an assistant ("What now?") that picks the best 5 tasks to do right now. It reads each task's state, duration, due date, priority rank, parent/project, and notes. It can only be as good as that data.
+
+YOUR PRIMARY JOB: find tasks whose data is too thin, stale, or contradictory for that assistant to judge well, and say exactly what to add or change.
+
+YOUR SECONDARY JOB: challenge the prioritization itself where it looks wrong.
+
+Be specific and direct. Reference tasks by their exact title.
 
 Every open task follows. Each is separated by a blank line; everything indented under a task belongs to THAT task only. Never carry a note, blocker, person, or project from one task to another.
 
 ${lines.join('\n\n')}
 
-Look for:
-- Blockers that look resolved or gone stale — waiting on someone a long time with no movement
+DATA QUALITY (kind: "data") — the main thing to look for:
+- No duration set, or a duration that can't be right for the work described
+- User duration that clearly contradicts estimated effort
+- Vague titles the assistant can't act on ("Look into X", "Deal with Y") with no note explaining the actual next step
+- Substantial tasks with no note at all — the assistant is judging them on the title alone
+- Marked not-actionable with nothing recorded about what would make it actionable
+- No due date on something the notes imply is time-sensitive
+- Blocked, but the blocker looks resolved or has gone stale with no movement
+- Waiting on a person with no date, or a date long past
 - Parent tasks whose open subtasks clearly don't add up to finishing them
-- High-rank tasks with no due date and no recent edits — priority claimed but not acted on
-- Low-rank tasks whose notes or due dates suggest they matter more than their rank says
-- Tasks whose user duration clearly disagrees with estimated effort
-- Tasks marked not-actionable that have sat that way a long time without being defined
-- Things that look abandoned, duplicated, or no longer worth doing
-- Whole areas neglected relative to their stated priority
+- Duplicates or near-duplicates the assistant would treat as separate work
+
+PRIORITIZATION (kind: "priority") — secondary, still valuable:
+- High rank, no due date, untouched for a long time — priority claimed but not acted on
+- Low rank whose notes or due dates suggest it matters more than its rank says
+- Things that look abandoned or no longer worth doing
+- Areas neglected relative to their stated priority
+
+Aim for roughly two-thirds "data" observations. For every data observation, the suggestion must state the specific field to fill and what to put in it.
 
 Return ONLY a valid JSON array, 5 to 7 observations, no markdown or code fences. Keep every field within its stated limit — long output gets cut off and lost:
-[{"headline":"Max 60 chars, the observation itself","detail":"1-2 sentences. Specific. Name the exact task titles involved.","suggestion":"Max 90 chars, one concrete thing to do about it","taskTitles":["exact title copied from the list above"],"severity":"high"}]
+[{"kind":"data","headline":"Max 60 chars, the observation itself","detail":"1-2 sentences. Specific. Name the exact task titles involved.","suggestion":"Max 90 chars, the concrete fix — name the field and the value","taskTitles":["exact title copied from the list above"],"severity":"high"}]
 
 taskTitles must contain the exact titles, copied character-for-character from the list above, of every task the observation refers to.
 
-severity is "high", "medium", or "low". Order by severity, highest first. If something genuinely looks fine, say so in at most one entry — spend the rest on problems.`;
+kind is "data" or "priority". severity is "high", "medium", or "low". Order by severity, highest first. If the list genuinely looks well-tuned, say so in at most one entry — spend the rest on problems.`;
 
   return parseJsonArrayLoose(await aiCall(MODEL_FAST,4000,prompt));
 }
 
 window._runReview=async function(){
+  const dom=state.reviewDomain||'personal';
   setState({reviewLoading:true,reviewResults:null,reviewError:null});
   try{
     const r=await getAIReview();
     const obs=(Array.isArray(r)?r:[]).map(o=>({...o,done:false}));
-    saveReview({ranAt:new Date().toISOString(),observations:obs});
+    saveReview({ranAt:new Date().toISOString(),observations:obs},dom);
     setState({reviewLoading:false,reviewResults:obs});
   }catch(e){
     console.error('Review failed:',e);
@@ -936,6 +957,7 @@ let state={
   editTask:null,
   backfillTotal:0,
   showReview:false,
+  reviewDomain:null,
   reviewLoading:false,
   reviewResults:null,
   reviewError:null,
@@ -2032,8 +2054,9 @@ function getTopDomain(tasks,id){
 
 function renderReview(){
   const sev={high:'var(--red-text)',medium:'var(--amber-text)',low:'var(--text3)'};
-  const open=flattenTasks(state.tasks).filter(t=>!t.closed).length;
-  const saved=loadReview();
+  const open=flattenTasks(state.tasks).filter(t=>!t.closed&&t.domain===(state.reviewDomain||'personal')).length;
+  const dom=state.reviewDomain||'personal';
+  const saved=loadReview(dom);
   const obs=state.reviewResults||(saved?saved.observations:null);
   const days=saved?Math.floor((Date.now()-new Date(saved.ranAt))/86400000):null;
   const ageLabel=days===null?'':days===0?'today':days===1?'yesterday':days+' days ago';
@@ -2044,7 +2067,10 @@ function renderReview(){
         <h2 style="margin-bottom:0">Review</h2>
         <button class="ghost" onclick="setState({showReview:false})" style="font-size:16px;padding:2px 8px">×</button>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.6">A second opinion on all ${open} open tasks — including blocked, parent, and cross-domain ones that "What now?" never shows you. Expect to disagree with some of it.</div>
+      <div style="display:flex;gap:4px;margin:10px 0 8px">
+        ${['work','personal'].map(d=>`<button onclick="window._reviewSetDomain('${d}')" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${dom===d?(d==='work'?'var(--blue-border)':'var(--teal-border)'):'var(--border2)'};background:${dom===d?(d==='work'?'var(--blue-bg)':'var(--teal-bg)'):'transparent'};color:${dom===d?(d==='work'?'var(--blue-text)':'var(--teal-text)'):'var(--text2)'};width:auto">${d==='work'?'Work':'Personal'}</button>`).join('')}
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.6">Checks all ${open} open ${dom} tasks — including blocked and parent tasks "What now?" never shows — for missing or contradictory data, then for priorities that look wrong.</div>
       <div style="max-height:70vh;overflow-y:auto">
         ${state.reviewLoading?`<div style="font-size:13px;color:var(--text2);padding:24px 0;text-align:center">Reviewing everything…</div>`:''}
         ${state.reviewError?`<div style="font-size:12px;color:var(--amber-text);margin-bottom:12px;line-height:1.6">⚠ ${escHtml(state.reviewError)}</div>`:''}
@@ -2055,7 +2081,7 @@ function renderReview(){
             <div style="display:flex;gap:8px;align-items:flex-start">
               <input type="checkbox" ${o.done?'checked':''} onchange="window._reviewToggle(${i})" style="margin-top:2px"/>
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:600;color:var(--text);${o.done?'text-decoration:line-through':''}">${escHtml(o.headline||'')}</div>
+                <div style="font-size:13px;font-weight:600;color:var(--text);${o.done?'text-decoration:line-through':''}">${o.kind?`<span style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3);margin-right:6px">${o.kind==='data'?'Data':'Priority'}</span>`:''}${escHtml(o.headline||'')}</div>
                 <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:3px">${escHtml(o.detail||'')}</div>
                 ${o.suggestion?`<div style="font-size:12px;color:var(--text3);margin-top:5px">→ ${escHtml(o.suggestion)}</div>`:''}
                 ${(o.taskTitles||[]).filter(tt=>flattenTasks(state.tasks).some(x=>x.title===tt)).map(tt=>`<button onclick="window._reviewOpenTask(&quot;${escHtml(tt).replace(/"/g,'&quot;')}&quot;)" style="font-size:11px;padding:2px 8px;margin:6px 4px 0 0">${escHtml(tt)}</button>`).join('')}
@@ -2080,11 +2106,11 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.16.2-alpha · Aug 1, 2026 11:14 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.17.0-alpha · Aug 1, 2026 11:33 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
-          <button class="icon-btn${state.showReview?' active':''}" onclick="setState({showReview:true,reviewError:null,showSettings:false,showArchive:false})" title="Review — challenge my priorities">⚖</button>
+          <button class="icon-btn${state.showReview?' active':''}" onclick="setState({showReview:true,reviewDomain:state.reviewDomain||state.activeDomain,reviewResults:null,reviewError:null,showSettings:false,showArchive:false})" title="Review — tune my task list" style="width:auto;padding:4px 10px;font-size:12px">Review</button>
           <button class="icon-btn${state.showSettings?' active':''}" onclick="setState({showSettings:!state.showSettings,showArchive:false})" title="Settings">⚙</button>
         </div>
       </div>
