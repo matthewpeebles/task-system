@@ -764,18 +764,19 @@ function triggerSummary(id){
   
 // ── AI Operation Mode ──────────────────────────────────────────────────────
 async function getAIRecommendations(candidates,topTasks,domain,avail){
-  const ranked=candidates.map((t,i)=>{
+  const ranked=candidates.map(t=>{
     const s=scoreTask(t,topTasks,availToMins(avail));
     const top=getTopAncestor(topTasks,t.id)||t;
     const crossPenalty=t.domain!==domain?(state.settings.crossDomainMultiplier??0.5):1;
     const parent=findParent(topTasks,t.id);
-    return{idx:i+1,id:t.id,title:t.title,domain:t.domain,state:t.state,duration:t.duration||'',due:t.dueDate||'',waitingWho:t.waitingWho||'',waitingBy:t.waitingBy||'',
+    return{id:t.id,title:t.title,domain:t.domain,state:t.state,duration:t.duration||'',due:t.dueDate||'',waitingWho:t.waitingWho||'',waitingBy:t.waitingBy||'',
       note:noteForPrompt(t,600),
       aiBlocker:t.aiBlocker||'',aiNextAction:t.aiNextAction||'',aiEffortMins:t.aiEffortMins||null,
       parent:(parent&&parent.id!==t.id)?parent.title:'',
       project:(top&&top.id!==t.id&&(!parent||top.id!==parent.id))?top.title:'',
       rank:top.rank||99,score:Math.round(s*crossPenalty)};
-  }).sort((a,b)=>b.score-a.score).slice(0,state.settings.opCandidateCap||40);
+  }).sort((a,b)=>b.score-a.score).slice(0,state.settings.opCandidateCap||40)
+   .map((t,i)=>{t.idx=i+1;return t;});
 
   const multiplier=state.settings.crossDomainMultiplier??0.5;
   const prompt=`You are a task prioritization assistant. The user is in "${domain}" mode with "${avail||'unspecified time'}" available now. Cross-domain tasks have already been pre-scored with a ${multiplier.toFixed(1)}x penalty multiplier applied to their raw scores.
@@ -791,6 +792,8 @@ Tasks may list a parent or project. Prefer tasks that move a project forward ove
 
 You MUST return exactly 5 tasks. If fewer than 5 candidates are available, return all of them. Never return fewer than the number of candidates provided. Select the best fit for the user's current context and rank them in order of recommendation.
 
+Your reason must describe ONLY the task at that idx. Never mention another task's project, parent, people, or details. Never mention the numeric score, ranking position, or the word "score" — the user cannot see those. If the task's state is not "actionable", do not call it actionable.
+
 Return ONLY a valid JSON array with no other text, no markdown, no code fences:
 [{"idx":1,"why":"One sentence, max 20 words, explaining why this task right now.","crossDomain":false}]
 
@@ -798,8 +801,8 @@ crossDomain should be true only if the task is from the opposite domain and is u
 
   const parsed=JSON.parse(await aiCall(MODEL_FAST,900,prompt));
   return parsed.map(r=>{
-    const src=ranked[r.idx-1]||ranked.find(x=>x.idx===r.idx);
-    if(!src)return null;
+    const src=ranked.find(x=>x.idx===r.idx);
+    if(!src){console.warn('Op Mode: AI returned unknown idx',r.idx);return null;}
     const task=candidates.find(t=>t.id===src.id);
     return{task,why:r.why,crossDomain:r.crossDomain||false};
   }).filter(Boolean);
@@ -1922,7 +1925,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.13.2-alpha · Aug 1, 2026 9:47 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.14.0-alpha · Aug 1, 2026 10:03 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
