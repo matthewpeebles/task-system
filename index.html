@@ -762,6 +762,70 @@ function triggerSummary(id){
   processSummaryQueue();
 }
   
+// ── Review mode ────────────────────────────────────────────────────────────
+async function getAIReview(){
+  const flat=flattenTasks(state.tasks).filter(t=>!t.closed);
+  if(!flat.length)return[];
+  const lines=flat.map((t,i)=>{
+    const top=getTopAncestor(state.tasks,t.id)||t;
+    const parent=findParent(state.tasks,t.id);
+    const openKids=(t.children||[]).filter(c=>!c.closed).length;
+    const note=noteForPrompt(t,300);
+    const age=t.createdAt?Math.floor((Date.now()-new Date(t.createdAt))/86400000):null;
+    const touched=t.updatedAt?Math.floor((Date.now()-new Date(t.updatedAt))/86400000):null;
+    return `${i+1}. "${t.title}" | ${t.domain} | ${t.state}`+
+      (t.duration?` | user duration ${t.duration}`:'')+
+      (t.aiEffortMins?` | est effort ${t.aiEffortMins}min`:'')+
+      (t.dueDate?` | due ${t.dueDate}`:' | no due date')+
+      (t.state==='blocked'&&t.blockedBy?` | blocked by: "${(findTask(state.tasks,t.blockedBy)||{}).title||'unknown'}"`:'')+
+      (t.waitingWho?` | waiting on ${t.waitingWho}${t.waitingBy?` since ${t.waitingBy}`:''}`:'')+
+      (openKids?` | ${openKids} open subtasks`:'')+
+      ((parent&&parent.id!==t.id)?` | parent: "${parent.title}"`:'')+
+      ((top&&top.id!==t.id&&(!parent||top.id!==parent.id))?` | project: "${top.title}"`:'')+
+      ` | rank #${top.rank||99}`+
+      (age!==null?` | created ${age}d ago`:'')+
+      (touched!==null?` | last edited ${touched}d ago`:'')+
+      (t.aiBlocker?`\n   blocker: ${t.aiBlocker}`:'')+
+      (note?`\n   note: ${note}`:'');
+  });
+
+  const prompt=`You are reviewing someone's entire task system with them during their weekly review. Today is ${today()}.
+
+Your job is to challenge their prioritization, not to agree with it. Be specific and direct. Reference tasks by their exact title.
+
+Every open task follows. Each is separated by a blank line; everything indented under a task belongs to THAT task only. Never carry a note, blocker, person, or project from one task to another.
+
+${lines.join('\n\n')}
+
+Look for:
+- Blockers that look resolved or gone stale — waiting on someone a long time with no movement
+- Parent tasks whose open subtasks clearly don't add up to finishing them
+- High-rank tasks with no due date and no recent edits — priority claimed but not acted on
+- Low-rank tasks whose notes or due dates suggest they matter more than their rank says
+- Tasks whose user duration clearly disagrees with estimated effort
+- Tasks marked not-actionable that have sat that way a long time without being defined
+- Things that look abandoned, duplicated, or no longer worth doing
+- Whole areas neglected relative to their stated priority
+
+Return ONLY a valid JSON array, 5 to 9 observations, no markdown or code fences:
+[{"headline":"Max 60 chars, the observation itself","detail":"1-2 sentences. Specific. Name the exact task titles involved.","suggestion":"Max 90 chars, one concrete thing to do about it","severity":"high"}]
+
+severity is "high", "medium", or "low". Order by severity, highest first. If something genuinely looks fine, say so in at most one entry — spend the rest on problems.`;
+
+  return JSON.parse(await aiCall(MODEL_FAST,2000,prompt));
+}
+
+window._runReview=async function(){
+  setState({reviewLoading:true,reviewResults:null,reviewError:null});
+  try{
+    const r=await getAIReview();
+    setState({reviewLoading:false,reviewResults:Array.isArray(r)?r:[]});
+  }catch(e){
+    console.error('Review failed:',e);
+    setState({reviewLoading:false,reviewError:String(e.message||e)});
+  }
+};
+
 // ── AI Operation Mode ──────────────────────────────────────────────────────
 async function getAIRecommendations(candidates,topTasks,domain,avail){
   const ranked=candidates.map(t=>{
@@ -831,6 +895,10 @@ let state={
   modalParentId:null,
   editTask:null,
   backfillTotal:0,
+  showReview:false,
+  reviewLoading:false,
+  reviewResults:null,
+  reviewError:null,
   showMoveModal:false,
   moveTaskId:null,
   showClosedSubtasks:loadSettings().showClosedSubtasksDefault,
@@ -1922,6 +1990,32 @@ function getTopDomain(tasks,id){
   return top?top.domain:null;
 }
 
+function renderReview(){
+  const sev={high:'var(--red-text)',medium:'var(--amber-text)',low:'var(--text3)'};
+  const open=flattenTasks(state.tasks).filter(t=>!t.closed).length;
+  return `<div class="overlay" onclick="if(event.target===this)setState({showReview:false})">
+    <div class="modal" style="max-width:560px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <h2 style="margin-bottom:0">Review</h2>
+        <button class="ghost" onclick="setState({showReview:false})" style="font-size:16px;padding:2px 8px">×</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.6">A second opinion on all ${open} open tasks — including blocked, parent, and cross-domain ones that "What now?" never shows you. Expect to disagree with some of it.</div>
+      <div style="max-height:70vh;overflow-y:auto">
+        ${state.reviewLoading?`<div style="font-size:13px;color:var(--text2);padding:24px 0;text-align:center">Reviewing everything…</div>`:''}
+        ${state.reviewError?`<div style="font-size:12px;color:var(--amber-text);margin-bottom:12px;line-height:1.6">⚠ ${escHtml(state.reviewError)}</div>`:''}
+        ${!state.reviewLoading&&!state.reviewResults?`<button class="primary" onclick="window._runReview()" style="width:100%;padding:9px">Run review</button>`:''}
+        ${(state.reviewResults||[]).map(o=>`
+          <div style="border-left:2px solid ${sev[o.severity]||'var(--border2)'};padding:6px 0 6px 12px;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:600;color:var(--text)">${escHtml(o.headline||'')}</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:3px">${escHtml(o.detail||'')}</div>
+            ${o.suggestion?`<div style="font-size:12px;color:var(--text3);margin-top:5px">→ ${escHtml(o.suggestion)}</div>`:''}
+          </div>`).join('')}
+        ${state.reviewResults&&!state.reviewLoading?`<button onclick="window._runReview()" style="width:100%;padding:7px;font-size:12px;margin-top:4px">Run again</button>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
 function render(){
   const flat=flattenTasks(state.tasks);
 
@@ -1934,10 +2028,11 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.14.1-alpha · Aug 1, 2026 10:19 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.15.0-alpha · Aug 1, 2026 10:34 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
+          <button class="icon-btn${state.showReview?' active':''}" onclick="setState({showReview:true,reviewResults:null,reviewError:null,showSettings:false,showArchive:false})" title="Review — challenge my priorities">⚖</button>
           <button class="icon-btn${state.showSettings?' active':''}" onclick="setState({showSettings:!state.showSettings,showArchive:false})" title="Settings">⚙</button>
         </div>
       </div>
@@ -2116,6 +2211,8 @@ function render(){
             ${renderArchiveView()}`}
         </div>
       </div>`:''}
+
+    ${state.showReview?renderReview():''}
 
     ${state.showSettings?`
       <div class="overlay" onclick="if(event.target===this)setState({showSettings:false})">
