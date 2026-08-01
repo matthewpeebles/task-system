@@ -654,6 +654,7 @@ function summaryStatus(t){
   const n=normNote(t);
   if(n.length<SUMMARY_MIN_CHARS||!t.notesSummary)return 'none';
   if(t.notesHash===noteHash(n))return 'fresh';
+  if(t.summaryFailed)return 'stale';
   return loadSummaryQueue().includes(t.id)?'pending':'stale';
 }
 
@@ -736,11 +737,10 @@ async function processSummaryQueue(){
 
 let _sumTimer=null;
 function scheduleSummaryScan(){
+  // Enqueue right away so the UI can show "updating…"; debounce only the API calls
+  flattenTasks(state.tasks).forEach(t=>{if(summaryNeeded(t))enqueueSummary(t.id);});
   clearTimeout(_sumTimer);
-  _sumTimer=setTimeout(()=>{
-    flattenTasks(state.tasks).forEach(t=>{if(summaryNeeded(t))enqueueSummary(t.id);});
-    processSummaryQueue();
-  },3000);
+  _sumTimer=setTimeout(()=>{processSummaryQueue();},3000);
 }
   
 // ── AI Operation Mode ──────────────────────────────────────────────────────
