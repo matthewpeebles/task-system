@@ -303,6 +303,7 @@ const DEFAULT_SETTINGS={
   dedupExclusionWords:DEFAULT_EXCLUSION_WORDS,
   opDismissDuration:60,
   summaryMinChars:400,
+  opCandidateCap:40,
   // What now? factor multipliers (1-100, default 50)
   mRank:50,
   mUrgency:50,
@@ -765,14 +766,26 @@ async function getAIRecommendations(candidates,topTasks,domain,avail){
     const s=scoreTask(t,topTasks,availToMins(avail));
     const top=getTopAncestor(topTasks,t.id)||t;
     const crossPenalty=t.domain!==domain?(state.settings.crossDomainMultiplier??0.5):1;
-    return{idx:i+1,id:t.id,title:t.title,domain:t.domain,state:t.state,duration:t.duration||'',due:t.dueDate||'',waitingWho:t.waitingWho||'',waitingBy:t.waitingBy||'',notes:(t.notes||'').replace(/\s+/g,' ').trim().slice(0,300),rank:top.rank||99,score:Math.round(s*crossPenalty)};
-  }).sort((a,b)=>b.score-a.score).slice(0,15);
+    const parent=findParent(topTasks,t.id);
+    return{idx:i+1,id:t.id,title:t.title,domain:t.domain,state:t.state,duration:t.duration||'',due:t.dueDate||'',waitingWho:t.waitingWho||'',waitingBy:t.waitingBy||'',
+      note:noteForPrompt(t,600),
+      aiBlocker:t.aiBlocker||'',aiNextAction:t.aiNextAction||'',aiEffortMins:t.aiEffortMins||null,
+      parent:(parent&&parent.id!==t.id)?parent.title:'',
+      project:(top&&top.id!==t.id&&(!parent||top.id!==parent.id))?top.title:'',
+      rank:top.rank||99,score:Math.round(s*crossPenalty)};
+  }).sort((a,b)=>b.score-a.score).slice(0,state.settings.opCandidateCap||40);
 
   const multiplier=state.settings.crossDomainMultiplier??0.5;
   const prompt=`You are a task prioritization assistant. The user is in "${domain}" mode with "${avail||'unspecified time'}" available now. Cross-domain tasks have already been pre-scored with a ${multiplier.toFixed(1)}x penalty multiplier applied to their raw scores.
 
 Candidate tasks (pre-scored, higher score = more urgent/important):
-${ranked.map(t=>`${t.idx}. [score:${t.score}] "${t.title}" | ${t.domain} | ${t.state}${t.duration?' | '+t.duration:''}${t.due?' | due '+t.due:''}${t.waitingWho?' | waiting on '+t.waitingWho+(t.waitingBy?' by '+t.waitingBy:''):''} | priority rank #${t.rank}${t.notes?'\n   notes: '+t.notes:''}`).join('\n')}
+${ranked.map(t=>`${t.idx}. [score:${t.score}] "${t.title}" | ${t.domain} | ${t.state}${t.duration?' | user duration '+t.duration:''}${t.aiEffortMins?' | est effort '+t.aiEffortMins+'min':''}${t.due?' | due '+t.due:''}${t.waitingWho?' | waiting on '+t.waitingWho+(t.waitingBy?' by '+t.waitingBy:''):''} | priority rank #${t.rank}${t.project?' | project: '+t.project:''}${t.parent?' | parent: '+t.parent:''}${t.aiBlocker?'\n   blocker: '+t.aiBlocker:''}${t.aiNextAction?'\n   next step: '+t.aiNextAction:''}${t.note?'\n   note: '+t.note:''}`).join('\n')}
+
+Notes appear either as a full short note or as an AI summary of a longer one. Note length reflects how much the user happened to write, never importance. Use notes for content — blockers, real effort, the actual next step — never as a priority signal.
+
+Where "est effort" contradicts the user's stated duration, trust est effort when judging whether the task fits the available time, and say so in your reason.
+
+Tasks may list a parent or project. Prefer tasks that move a project forward over isolated one-offs of equal score.
 
 You MUST return exactly 5 tasks. If fewer than 5 candidates are available, return all of them. Never return fewer than the number of candidates provided. Select the best fit for the user's current context and rank them in order of recommendation.
 
@@ -781,15 +794,7 @@ Return ONLY a valid JSON array with no other text, no markdown, no code fences:
 
 crossDomain should be true only if the task is from the opposite domain and is urgent enough to surface anyway.`;
 
-  const res=await fetch('https://ts-relay-4f2a.matthew-peebles.workers.dev/',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:800,messages:[{role:'user',content:prompt}]})
-  });
-  const data=await res.json();
-  const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-  const clean=text.replace(/```json|```/g,'').trim();
-  const parsed=JSON.parse(clean);
+  const parsed=JSON.parse(await aiCall(MODEL_SMART,900,prompt));
   return parsed.map(r=>{
     const src=ranked[r.idx-1]||ranked.find(x=>x.idx===r.idx);
     if(!src)return null;
@@ -1574,6 +1579,10 @@ function renderSettings(){
       <select onchange="window._saveSetting('defaultAvail',this.value)" style="font-size:13px;margin-bottom:14px">
         ${['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'].map(a=>`<option ${s.defaultAvail===a?'selected':''}>${a}</option>`).join('')}
       </select>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Candidates sent to AI</div>
+      <select onchange="window._saveSetting('opCandidateCap',parseInt(this.value))" style="font-size:13px;margin-bottom:14px">
+        ${[[15,'15 (fastest)'],[25,'25'],[40,'40 (default)'],[60,'60'],[100,'100 (broadest)']].map(([v,l])=>`<option value="${v}" ${(s.opCandidateCap??40)===v?'selected':''}>${l}</option>`).join('')}
+      </select>
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Snooze duration</div>
       <select onchange="window._saveSetting('opDismissDuration',parseInt(this.value))" style="font-size:13px">
         ${[[30,'30 minutes'],[60,'1 hour'],[240,'4 hours'],[1440,'1 day']].map(([val,label])=>`<option value="${val}" ${s.opDismissDuration===val?'selected':''}>${label}</option>`).join('')}
@@ -1850,7 +1859,7 @@ function renderOpMode(){
               </div>
               <div class="op-why">${escHtml(r.why)}</div>
               ${r.task.state==='waiting'&&r.task.waitingWho?`<div style="font-size:12px;color:var(--amber-text);margin-top:5px">↻ Waiting on ${escHtml(r.task.waitingWho)}</div>`:''}
-              ${r.task.notes?`<div style="font-size:12px;color:var(--text2);margin-top:5px;line-height:1.55;border-top:0.5px solid var(--border);padding-top:5px">${escHtml(r.task.notes)}</div>`:''}
+              ${(()=>{const n=noteForPrompt(r.task,600);return n?`<div style="font-size:12px;color:var(--text2);margin-top:5px;line-height:1.55;border-top:0.5px solid var(--border);padding-top:5px">${escHtml(n)}</div>`:'';})()}
             </div>
             <button class="ghost" onclick="event.stopPropagation();window._opDone('${r.task.id}')" title="Mark complete" style="font-size:13px;color:var(--teal-text);flex-shrink:0;align-self:center;margin-top:2px">✓</button>
           </div>
@@ -1911,7 +1920,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.12.0-alpha · Aug 1, 2026 9:18 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.13.0-alpha · Aug 1, 2026 9:31 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
