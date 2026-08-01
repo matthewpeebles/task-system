@@ -619,14 +619,16 @@ const MODEL_FAST='claude-haiku-4-5-20251001';
 const MODEL_SMART='claude-sonnet-5';
 
 async function aiCall(model,maxTokens,prompt){
+  if(!prompt)throw new Error('empty prompt');
   const res=await fetch(AI_ENDPOINT,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({model,max_tokens:maxTokens,messages:[{role:'user',content:prompt}]})
   });
-  if(!res.ok)throw new Error('AI HTTP '+res.status);
+  if(!res.ok)throw new Error('AI HTTP '+res.status+' '+(await res.text()).slice(0,300));
   const data=await res.json();
   const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  if(!text)throw new Error('AI returned no text. stop_reason='+(data.stop_reason||'?')+' blocks='+(data.content||[]).map(b=>b.type).join(','));
   return text.replace(/```json|```/g,'').trim();
 }
 
@@ -794,7 +796,7 @@ Return ONLY a valid JSON array with no other text, no markdown, no code fences:
 
 crossDomain should be true only if the task is from the opposite domain and is urgent enough to surface anyway.`;
 
-  const parsed=JSON.parse(await aiCall(MODEL_SMART,900,prompt));
+  const parsed=JSON.parse(await aiCall(MODEL_FAST,900,prompt));
   return parsed.map(r=>{
     const src=ranked[r.idx-1]||ranked.find(x=>x.idx===r.idx);
     if(!src)return null;
@@ -1920,7 +1922,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.13.0-alpha · Aug 1, 2026 9:31 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.13.2-alpha · Aug 1, 2026 9:47 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
@@ -2862,6 +2864,7 @@ window._runOp=async function(){
     }
     setState({opLoading:false,opResults:dedupedResults});
   }catch(e){
+    console.error('Op Mode AI failed:',e);
     // Fallback scoring
     const scored=uniqueCandidates.map(t=>({task:t,score:scoreTaskWithDomain(t,state.tasks,availToMins(state.opAvail),state.opDomain),why:'⚠ Offline scoring — AI unavailable.', crossDomain:t.domain!==state.opDomain}))
       .sort((a,b)=>b.score-a.score).slice(0,Math.min(5,uniqueCandidates.length));
