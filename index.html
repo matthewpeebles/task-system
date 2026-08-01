@@ -650,6 +650,12 @@ function summaryIsStale(t){
   if(n.length<SUMMARY_MIN_CHARS)return false;
   return !!t.notesSummary&&t.notesHash!==noteHash(n);
 }
+function summaryStatus(t){
+  const n=normNote(t);
+  if(n.length<SUMMARY_MIN_CHARS||!t.notesSummary)return 'none';
+  if(t.notesHash===noteHash(n))return 'fresh';
+  return loadSummaryQueue().includes(t.id)?'pending':'stale';
+}
 
 // What actually gets sent to the AI for a task's notes.
 // Short note → verbatim. Valid summary → summary. Otherwise → truncated raw note.
