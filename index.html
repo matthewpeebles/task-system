@@ -261,11 +261,11 @@ function saveTasks(tasks){
   // If Drive configured but no token, render to show banner
   if(gdrive.clientId&&!gdrive.token)gdriveRender();
   gdriveScheduleWrite();
+  scheduleSummaryScan();
 }
 function loadArchive(){try{const s=localStorage.getItem(ARCHIVE_KEY);return s?JSON.parse(s):[];}catch(e){return[];}}
 function saveArchive(archive){
   try{localStorage.setItem(ARCHIVE_KEY,JSON.stringify(archive));}catch(e){}
-  gdriveScheduleWrite();
   scheduleSummaryScan();
 }
 function loadTombstones(){try{const s=localStorage.getItem(TOMBSTONE_KEY);return s?JSON.parse(s):{};} catch(e){return{};}}
@@ -736,9 +736,9 @@ async function processSummaryQueue(){
 }
 
 let _sumTimer=null;
-function scheduleSummaryScan(){
+function scheduleSummaryScan(tasks){
   // Enqueue right away so the UI can show "updating…"; debounce only the API calls
-  flattenTasks(state.tasks).forEach(t=>{if(summaryNeeded(t))enqueueSummary(t.id);});
+  flattenTasks(tasks||state.tasks).forEach(t=>{if(summaryNeeded(t))enqueueSummary(t.id);});
   clearTimeout(_sumTimer);
   _sumTimer=setTimeout(()=>{processSummaryQueue();},3000);
 }
@@ -1862,7 +1862,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.10.2-alpha · Aug 1, 2026 7:43 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.10.3-alpha · Aug 1, 2026 7:55 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
