@@ -676,14 +676,25 @@ function enqueueSummary(id){
   const q=loadSummaryQueue();
   if(!q.includes(id)){q.push(id);saveSummaryQueue(q);}
 }
+// Tasks queued for a forced rebuild, ignoring hash match
+let _forceSummary=new Set();
 
+const SUMMARY_PROMPT_VERSION=2;
 async function summarizeTask(t){
   const n=normNote(t);
+  const parent=findParent(state.tasks,t.id);
+  const top=getTopAncestor(state.tasks,t.id);
   const prompt=`Summarize this task note for a prioritization assistant that will later decide what the user should work on.
 
 Task: "${t.title}"
 State: ${t.state}${t.duration?`
-User-set duration: ${t.duration}`:''}
+User-set duration: ${t.duration}`:''}${t.dueDate?`
+Due: ${t.dueDate}`:''}${t.waitingWho?`
+Waiting on: ${t.waitingWho}`:''}${(parent&&parent.id!==t.id)?`
+Parent task: "${parent.title}"`:''}${(top&&top.id!==t.id&&(!parent||top.id!==parent.id))?`
+Project: "${top.title}"`:''}
+
+The note may use shorthand that only makes sense given the task title, parent, or project above. Resolve vague references ("them", "it", "call back") using that context so the summary stands on its own.
 
 Note:
 ${n.slice(0,10000)}
@@ -702,6 +713,7 @@ Return ONLY valid JSON. No markdown, no code fences, no preamble.
     aiBlocker:p.blocker?String(p.blocker).slice(0,120):null,
     aiEffortMins:Number.isFinite(p.effortMins)?p.effortMins:null,
     aiSuggestDuration:!!p.suggestDurationChange,
+    summaryPromptVersion:SUMMARY_PROMPT_VERSION,
     summaryFailed:false
   };
 }
@@ -716,7 +728,7 @@ async function processSummaryQueue(){
     while(q.length){
       const id=q[0];
       const t=findTask(state.tasks,id);
-      if(!t||!summaryNeeded(t)){q.shift();saveSummaryQueue(q);continue;}
+      if(!t||(!summaryNeeded(t)&&!_forceSummary.has(id))){q.shift();saveSummaryQueue(q);continue;}
       if(t.summaryFailed){state.tasks=updateTask(state.tasks,id,{summaryFailed:false});}
       let fields;
       try{
@@ -732,6 +744,7 @@ async function processSummaryQueue(){
       // NOTE: deliberately does not set updatedAt — derived data must not win merges
       state.tasks=updateTask(state.tasks,id,fields);
       saveTasks(state.tasks);
+      _forceSummary.delete(id);
       q=loadSummaryQueue(); q.shift(); saveSummaryQueue(q);
       render();
     }
@@ -1776,7 +1789,12 @@ function renderSettings(){
         <select onchange="window._saveSetting('summaryMinChars',parseInt(this.value))" style="font-size:13px;margin-bottom:10px">
           ${[[100,'100 characters'],[400,'400 characters'],[800,'800 characters'],[1200,'1,200 characters'],[2000,'2,000 characters']].map(([v,l])=>`<option value="${v}" ${(s.summaryMinChars??400)===v?'selected':''}>${l}</option>`).join('')}
         </select><br>
-        <button onclick="window._backfillSummaries()" ${state.backfillTotal?'disabled':''} style="font-size:12px">${state.backfillTotal?'Running\u2026':'Backfill now'}</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button onclick="window._backfillSummaries()" ${state.backfillTotal?'disabled':''} style="font-size:12px">${state.backfillTotal?'Running\u2026':'Backfill now'}</button>
+          <button onclick="window._regenSummaries()" ${state.backfillTotal?'disabled':''} style="font-size:12px">Regenerate all</button>
+        </div>
+        ${(()=>{const old=flattenTasks(state.tasks).filter(t=>t.notesSummary&&(t.summaryPromptVersion||1)<SUMMARY_PROMPT_VERSION).length;
+          return old?`<div style="font-size:11px;color:var(--amber-text);margin-top:8px">${old} summary/summaries were built with an older prompt \u2014 Regenerate all to update them.</div>`:'';})()}
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.6">Restore overwrites all data on this device. If Drive sync is connected, disconnect first, restore, then reconnect \u2014 otherwise the next sync can merge the old data back in.</div>
     </div>
@@ -1893,7 +1911,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.11.1-alpha · Aug 1, 2026 9:02 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.12.0-alpha · Aug 1, 2026 9:18 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
@@ -2630,6 +2648,25 @@ window._backfillSummaries=async function(){
   if(failed)alert('Finished with '+failed+' failure(s). Open a failed task to see the marker, or check the console. Run backfill again to retry.');
   else if(left)alert('Stopped with '+left+' remaining. Check your connection and run again.');
   else alert('Done — all notes summarized.');
+};
+
+window._regenSummaries=async function(){
+  const all=flattenTasks(state.tasks).filter(t=>normNote(t).length>=summaryMinChars());
+  if(!all.length){alert('No notes are over '+summaryMinChars()+' characters.');return;}
+  const stale=all.filter(t=>(t.summaryPromptVersion||1)<SUMMARY_PROMPT_VERSION).length;
+  const est=Math.max(0.01,all.length*0.0004).toFixed(2);
+  if(!confirm('Rebuild ALL '+all.length+' summary/summaries from scratch?\n'+
+    (stale?stale+' were built with an older prompt.\n':'')+
+    'Estimated cost: about $'+est+'.\n\nExisting summaries are replaced. Your notes are not touched.\nProceed?'))return;
+  all.forEach(t=>{_forceSummary.add(t.id);enqueueSummary(t.id);});
+  state.backfillTotal=all.length;
+  render();
+  await processSummaryQueue();
+  const failed=flattenTasks(state.tasks).filter(t=>t.summaryFailed).length;
+  state.backfillTotal=0;
+  _forceSummary.clear();
+  render();
+  alert(failed?'Finished with '+failed+' failure(s). Run again to retry.':'Done — all summaries rebuilt.');
 };
 
 window._importPick=function(){ document.getElementById('import-file').click(); };
