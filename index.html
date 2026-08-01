@@ -266,6 +266,7 @@ function loadArchive(){try{const s=localStorage.getItem(ARCHIVE_KEY);return s?JS
 function saveArchive(archive){
   try{localStorage.setItem(ARCHIVE_KEY,JSON.stringify(archive));}catch(e){}
   gdriveScheduleWrite();
+  scheduleSummaryScan();
 }
 function loadTombstones(){try{const s=localStorage.getItem(TOMBSTONE_KEY);return s?JSON.parse(s):{};} catch(e){return{};}}
 function saveTombstones(t){try{localStorage.setItem(TOMBSTONE_KEY,JSON.stringify(t));}catch(e){}}
@@ -611,6 +612,131 @@ function findSimilar(tasks,title){
   }).slice(0,4);
 }
 
+// ── AI plumbing ────────────────────────────────────────────────────────────
+const AI_ENDPOINT='https://ts-relay-4f2a.matthew-peebles.workers.dev/';
+const MODEL_FAST='claude-haiku-4-5-20251001';
+const MODEL_SMART='claude-sonnet-5';
+
+async function aiCall(model,maxTokens,prompt){
+  const res=await fetch(AI_ENDPOINT,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model,max_tokens:maxTokens,messages:[{role:'user',content:prompt}]})
+  });
+  if(!res.ok)throw new Error('AI HTTP '+res.status);
+  const data=await res.json();
+  const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  return text.replace(/```json|```/g,'').trim();
+}
+
+// ── Note summarization ─────────────────────────────────────────────────────
+const SUMMARY_MIN_CHARS=400;
+const SUMMARY_QUEUE_KEY='taskSystem_summaryQueue';
+
+function noteHash(s){
+  let h=5381;
+  for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;
+  return (h>>>0).toString(36);
+}
+function normNote(t){return (t.notes||'').replace(/\s+/g,' ').trim();}
+
+function summaryNeeded(t){
+  const n=normNote(t);
+  if(n.length<SUMMARY_MIN_CHARS)return false;
+  return !t.notesSummary||t.notesHash!==noteHash(n);
+}
+function summaryIsStale(t){
+  const n=normNote(t);
+  if(n.length<SUMMARY_MIN_CHARS)return false;
+  return !!t.notesSummary&&t.notesHash!==noteHash(n);
+}
+
+// What actually gets sent to the AI for a task's notes.
+// Short note → verbatim. Valid summary → summary. Otherwise → truncated raw note.
+function noteForPrompt(t,cap){
+  const n=normNote(t);
+  if(!n)return '';
+  if(n.length<SUMMARY_MIN_CHARS)return n;
+  if(t.notesSummary&&t.notesHash===noteHash(n))return t.notesSummary;
+  const c=cap||600;
+  return (n.length>c?n.slice(0,c)+' […truncated]':n)+' [not yet summarized]';
+}
+
+function loadSummaryQueue(){try{return JSON.parse(localStorage.getItem(SUMMARY_QUEUE_KEY)||'[]');}catch(e){return[];}}
+function saveSummaryQueue(q){try{localStorage.setItem(SUMMARY_QUEUE_KEY,JSON.stringify(q));}catch(e){}}
+function enqueueSummary(id){
+  const q=loadSummaryQueue();
+  if(!q.includes(id)){q.push(id);saveSummaryQueue(q);}
+}
+
+async function summarizeTask(t){
+  const n=normNote(t);
+  const prompt=`Summarize this task note for a prioritization assistant that will later decide what the user should work on.
+
+Task: "${t.title}"
+State: ${t.state}${t.duration?`
+User-set duration: ${t.duration}`:''}
+
+Note:
+${n.slice(0,10000)}
+
+Return ONLY valid JSON. No markdown, no code fences, no preamble.
+{"summary":"Max 200 chars. What this is, what's already decided, what's unresolved. Dense, no filler.",
+ "nextAction":"Max 80 chars. The concrete next physical step. null if unclear.",
+ "blocker":"Max 80 chars. What is preventing progress right now. null if nothing.",
+ "effortMins":<integer, realistic total effort in minutes, or null>,
+ "suggestDurationChange":<true only if effortMins clearly contradicts the user-set duration>}`;
+  const p=JSON.parse(await aiCall(MODEL_FAST,400,prompt));
+  return{
+    notesSummary:String(p.summary||'').slice(0,300),
+    notesHash:noteHash(n),
+    aiNextAction:p.nextAction?String(p.nextAction).slice(0,120):null,
+    aiBlocker:p.blocker?String(p.blocker).slice(0,120):null,
+    aiEffortMins:Number.isFinite(p.effortMins)?p.effortMins:null,
+    aiSuggestDuration:!!p.suggestDurationChange,
+    summaryFailed:false
+  };
+}
+
+let _summaryRunning=false;
+async function processSummaryQueue(){
+  if(_summaryRunning)return;
+  if(!navigator.onLine)return;
+  _summaryRunning=true;
+  try{
+    let q=loadSummaryQueue();
+    while(q.length){
+      const id=q[0];
+      const t=findTask(state.tasks,id);
+      if(!t||!summaryNeeded(t)){q.shift();saveSummaryQueue(q);continue;}
+      let fields;
+      try{
+        fields=await summarizeTask(t);
+      }catch(e){
+        // Leave in queue, flag visibly, stop until next trigger
+        state.tasks=updateTask(state.tasks,id,{summaryFailed:true});
+        saveTasks(state.tasks);
+        render();
+        break;
+      }
+      // NOTE: deliberately does not set updatedAt — derived data must not win merges
+      state.tasks=updateTask(state.tasks,id,fields);
+      saveTasks(state.tasks);
+      q=loadSummaryQueue(); q.shift(); saveSummaryQueue(q);
+      render();
+    }
+  }finally{_summaryRunning=false;}
+}
+
+let _sumTimer=null;
+function scheduleSummaryScan(){
+  clearTimeout(_sumTimer);
+  _sumTimer=setTimeout(()=>{
+    flattenTasks(state.tasks).forEach(t=>{if(summaryNeeded(t))enqueueSummary(t.id);});
+    processSummaryQueue();
+  },3000);
+}
+  
 // ── AI Operation Mode ──────────────────────────────────────────────────────
 async function getAIRecommendations(candidates,topTasks,domain,avail){
   const ranked=candidates.map((t,i)=>{
@@ -1114,6 +1240,17 @@ function renderForm(opts){
           placeholder="${stateVal==='not-actionable'?'Use this to think through what needs to happen…':'Additional context…'}">${escHtml(initial.notes||'')}</textarea>
       </div>
 
+${initial.notesSummary?`<div class="form-row" style="margin-top:-4px">
+        <div style="font-size:12px;color:var(--text3);line-height:1.55;padding:8px 12px;border-left:2px solid var(--border)">
+          <strong style="color:var(--text2)">Summary</strong>${summaryIsStale(initial)?` <span style="color:var(--amber-text)">— stale, note changed</span>`:''}<br>
+          ${escHtml(initial.notesSummary)}
+          ${initial.aiNextAction?`<br><span style="color:var(--text2)">Next:</span> ${escHtml(initial.aiNextAction)}`:''}
+          ${initial.aiBlocker?`<br><span style="color:var(--amber-text)">Blocker:</span> ${escHtml(initial.aiBlocker)}`:''}
+          ${initial.aiEffortMins?`<br><span style="color:var(--text2)">Est. effort:</span> ${initial.aiEffortMins} min${initial.aiSuggestDuration?` <span style="color:var(--amber-text)">(differs from your duration)</span>`:''}`:''}
+        </div>
+      </div>`:''}
+      ${initial.summaryFailed?`<div class="form-row" style="font-size:11px;color:var(--amber-text);margin-top:-4px">⚠ Summary generation failed — will retry.</div>`:''}
+      
       <div id="f-due-warn" style="display:none;font-size:11px;color:var(--amber-text);margin-bottom:8px;line-height:1.5"></div>
       <div class="btn-row">
         <button onclick="window._formCancel()">Cancel</button>
@@ -2677,6 +2814,10 @@ setInterval(()=>{
     }
   }
 },60000);
+  
+window.addEventListener('online',()=>{processSummaryQueue();});
+setTimeout(()=>{scheduleSummaryScan();},5000);
+
 </script>
 </body>
 </html>
