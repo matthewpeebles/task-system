@@ -763,6 +763,19 @@ function triggerSummary(id){
 }
   
 // ── Review mode ────────────────────────────────────────────────────────────
+const REVIEW_KEY='taskSystem_review';
+function loadReview(){try{const r=localStorage.getItem(REVIEW_KEY);return r?JSON.parse(r):null;}catch(e){return null;}}
+function saveReview(r){try{localStorage.setItem(REVIEW_KEY,JSON.stringify(r));}catch(e){}}
+window._reviewToggle=function(i){
+  const r=loadReview(); if(!r||!r.observations[i])return;
+  r.observations[i].done=!r.observations[i].done;
+  saveReview(r); setState({reviewResults:r.observations});
+};
+window._reviewOpenTask=function(title){
+  const t=flattenTasks(state.tasks).find(x=>x.title===title);
+  if(t)setState({editTask:t});
+};
+
 async function getAIReview(){
   const flat=flattenTasks(state.tasks).filter(t=>!t.closed);
   if(!flat.length)return[];
@@ -808,7 +821,9 @@ Look for:
 - Whole areas neglected relative to their stated priority
 
 Return ONLY a valid JSON array, 5 to 9 observations, no markdown or code fences:
-[{"headline":"Max 60 chars, the observation itself","detail":"1-2 sentences. Specific. Name the exact task titles involved.","suggestion":"Max 90 chars, one concrete thing to do about it","severity":"high"}]
+[{"headline":"Max 60 chars, the observation itself","detail":"1-2 sentences. Specific. Name the exact task titles involved.","suggestion":"Max 90 chars, one concrete thing to do about it","taskTitles":["exact title copied from the list above"],"severity":"high"}]
+
+taskTitles must contain the exact titles, copied character-for-character from the list above, of every task the observation refers to.
 
 severity is "high", "medium", or "low". Order by severity, highest first. If something genuinely looks fine, say so in at most one entry — spend the rest on problems.`;
 
@@ -819,7 +834,9 @@ window._runReview=async function(){
   setState({reviewLoading:true,reviewResults:null,reviewError:null});
   try{
     const r=await getAIReview();
-    setState({reviewLoading:false,reviewResults:Array.isArray(r)?r:[]});
+    const obs=(Array.isArray(r)?r:[]).map(o=>({...o,done:false}));
+    saveReview({ranAt:new Date().toISOString(),observations:obs});
+    setState({reviewLoading:false,reviewResults:obs});
   }catch(e){
     console.error('Review failed:',e);
     setState({reviewLoading:false,reviewError:String(e.message||e)});
@@ -1993,6 +2010,11 @@ function getTopDomain(tasks,id){
 function renderReview(){
   const sev={high:'var(--red-text)',medium:'var(--amber-text)',low:'var(--text3)'};
   const open=flattenTasks(state.tasks).filter(t=>!t.closed).length;
+  const saved=loadReview();
+  const obs=state.reviewResults||(saved?saved.observations:null);
+  const days=saved?Math.floor((Date.now()-new Date(saved.ranAt))/86400000):null;
+  const ageLabel=days===null?'':days===0?'today':days===1?'yesterday':days+' days ago';
+  const doneCount=(obs||[]).filter(o=>o.done).length;
   return `<div class="overlay" onclick="if(event.target===this)setState({showReview:false})">
     <div class="modal" style="max-width:560px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
@@ -2003,14 +2025,21 @@ function renderReview(){
       <div style="max-height:70vh;overflow-y:auto">
         ${state.reviewLoading?`<div style="font-size:13px;color:var(--text2);padding:24px 0;text-align:center">Reviewing everything…</div>`:''}
         ${state.reviewError?`<div style="font-size:12px;color:var(--amber-text);margin-bottom:12px;line-height:1.6">⚠ ${escHtml(state.reviewError)}</div>`:''}
-        ${!state.reviewLoading&&!state.reviewResults?`<button class="primary" onclick="window._runReview()" style="width:100%;padding:9px">Run review</button>`:''}
-        ${(state.reviewResults||[]).map(o=>`
-          <div style="border-left:2px solid ${sev[o.severity]||'var(--border2)'};padding:6px 0 6px 12px;margin-bottom:14px">
-            <div style="font-size:13px;font-weight:600;color:var(--text)">${escHtml(o.headline||'')}</div>
-            <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:3px">${escHtml(o.detail||'')}</div>
-            ${o.suggestion?`<div style="font-size:12px;color:var(--text3);margin-top:5px">→ ${escHtml(o.suggestion)}</div>`:''}
+        ${!state.reviewLoading&&!obs?`<button class="primary" onclick="window._runReview()" style="width:100%;padding:9px">Run review</button>`:''}
+        ${obs&&!state.reviewLoading?`<div style="font-size:11px;margin-bottom:12px;color:${days>=8?'var(--amber-text)':'var(--text3)'}">Reviewed ${ageLabel}${days>=8?' — worth running again':''} · ${doneCount} of ${obs.length} addressed</div>`:''}
+        ${(obs||[]).map((o,i)=>`
+          <div style="border-left:2px solid ${o.done?'var(--border2)':(sev[o.severity]||'var(--border2)')};padding:6px 0 6px 12px;margin-bottom:14px;opacity:${o.done?'0.45':'1'}">
+            <div style="display:flex;gap:8px;align-items:flex-start">
+              <input type="checkbox" ${o.done?'checked':''} onchange="window._reviewToggle(${i})" style="margin-top:3px;flex-shrink:0"/>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;color:var(--text);${o.done?'text-decoration:line-through':''}">${escHtml(o.headline||'')}</div>
+                <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:3px">${escHtml(o.detail||'')}</div>
+                ${o.suggestion?`<div style="font-size:12px;color:var(--text3);margin-top:5px">→ ${escHtml(o.suggestion)}</div>`:''}
+                ${(o.taskTitles||[]).filter(tt=>flattenTasks(state.tasks).some(x=>x.title===tt)).map(tt=>`<button onclick="window._reviewOpenTask(&quot;${escHtml(tt).replace(/"/g,'&quot;')}&quot;)" style="font-size:11px;padding:2px 8px;margin:6px 4px 0 0">${escHtml(tt)}</button>`).join('')}
+              </div>
+            </div>
           </div>`).join('')}
-        ${state.reviewResults&&!state.reviewLoading?`<button onclick="window._runReview()" style="width:100%;padding:7px;font-size:12px;margin-top:4px">Run again</button>`:''}
+        ${obs&&!state.reviewLoading?`<button onclick="if(confirm('Replace this review with a new one? Anything unchecked will be lost.'))window._runReview()" style="width:100%;padding:7px;font-size:12px;margin-top:4px">Run again</button>`:''}
       </div>
     </div>
   </div>`;
@@ -2028,11 +2057,11 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.15.0-alpha · Aug 1, 2026 10:34 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.16.0-alpha · Aug 1, 2026 10:52 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
-          <button class="icon-btn${state.showReview?' active':''}" onclick="setState({showReview:true,reviewResults:null,reviewError:null,showSettings:false,showArchive:false})" title="Review — challenge my priorities">⚖</button>
+          <button class="icon-btn${state.showReview?' active':''}" onclick="setState({showReview:true,reviewError:null,showSettings:false,showArchive:false})" title="Review — challenge my priorities">⚖</button>
           <button class="icon-btn${state.showSettings?' active':''}" onclick="setState({showSettings:!state.showSettings,showArchive:false})" title="Settings">⚙</button>
         </div>
       </div>
@@ -2158,6 +2187,8 @@ function render(){
 `})()}
     </div>
 
+    ${state.showReview?renderReview():''}
+
     ${state.showModal?`
       <div class="overlay" onclick="if(event.target===this)setState({showModal:false,modalParentId:null})">
         <div class="modal">
@@ -2211,8 +2242,6 @@ function render(){
             ${renderArchiveView()}`}
         </div>
       </div>`:''}
-
-    ${state.showReview?renderReview():''}
 
     ${state.showSettings?`
       <div class="overlay" onclick="if(event.target===this)setState({showSettings:false})">
