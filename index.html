@@ -728,7 +728,6 @@ async function processSummaryQueue(){
         break;
       }
       // NOTE: deliberately does not set updatedAt — derived data must not win merges
-      console.log('[sum] success',t.title,'->',fields.notesSummary.slice(0,60));
       state.tasks=updateTask(state.tasks,id,fields);
       saveTasks(state.tasks);
       q=loadSummaryQueue(); q.shift(); saveSummaryQueue(q);
@@ -740,9 +739,7 @@ async function processSummaryQueue(){
 // Called only from an explicit user save (edit or create)
 function triggerSummary(id){
   const t=findTask(state.tasks,id);
-  if(!t){console.log('[sum] no task',id);return;}
-  if(!summaryNeeded(t)){console.log('[sum] not needed —',t.title,'| noteLen',normNote(t).length,'| hasSummary',!!t.notesSummary,'| hashMatch',t.notesHash===noteHash(normNote(t)));return;}
-  console.log('[sum] enqueue',t.title,'| noteLen',normNote(t).length);
+  if(!t||!summaryNeeded(t))return;
   enqueueSummary(id);
   processSummaryQueue();
 }
@@ -1874,7 +1871,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.10.5-alpha · Aug 1, 2026 8:31 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.10.6-alpha · Aug 1, 2026 8:38 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
