@@ -302,6 +302,7 @@ const DEFAULT_SETTINGS={
   needsDefinitionBoost:10,
   dedupExclusionWords:DEFAULT_EXCLUSION_WORDS,
   opDismissDuration:60,
+  summaryMinChars:400,
   // What now? factor multipliers (1-100, default 50)
   mRank:50,
   mUrgency:50,
@@ -629,7 +630,7 @@ async function aiCall(model,maxTokens,prompt){
 }
 
 // ── Note summarization ─────────────────────────────────────────────────────
-const SUMMARY_MIN_CHARS=400;
+function summaryMinChars(){return state.settings?.summaryMinChars??400;}
 const SUMMARY_QUEUE_KEY='taskSystem_summaryQueue';
 
 function noteHash(s){
@@ -641,17 +642,17 @@ function normNote(t){return (t.notes||'').replace(/\s+/g,' ').trim();}
 
 function summaryNeeded(t){
   const n=normNote(t);
-  if(n.length<SUMMARY_MIN_CHARS)return false;
+  if(n.length<summaryMinChars())return false;
   return !t.notesSummary||t.notesHash!==noteHash(n);
 }
 function summaryIsStale(t){
   const n=normNote(t);
-  if(n.length<SUMMARY_MIN_CHARS)return false;
+  if(n.length<summaryMinChars())return false;
   return !!t.notesSummary&&t.notesHash!==noteHash(n);
 }
 function summaryStatus(t){
   const n=normNote(t);
-  if(n.length<SUMMARY_MIN_CHARS)return 'none';
+  if(n.length<summaryMinChars())return 'none';
   if(t.notesSummary&&t.notesHash===noteHash(n))return 'fresh';
   if(t.summaryFailed)return 'failed';
   if(loadSummaryQueue().includes(t.id))return 'pending';
@@ -663,7 +664,7 @@ function summaryStatus(t){
 function noteForPrompt(t,cap){
   const n=normNote(t);
   if(!n)return '';
-  if(n.length<SUMMARY_MIN_CHARS)return n;
+  if(n.length<summaryMinChars())return n;
   if(t.notesSummary&&t.notesHash===noteHash(n))return t.notesSummary;
   const c=cap||600;
   return (n.length>c?n.slice(0,c)+' […truncated]':n)+' [not yet summarized]';
@@ -1770,7 +1771,11 @@ function renderSettings(){
           if(!need&&!failed)return `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">All notes are summarized.</div>`;
           return `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${need} note(s) need a summary${failed?`, ${failed} previously failed`:''}.</div>`;
         })()}
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6">Summaries normally regenerate only when you edit a note. Use this once after enabling the feature, or to retry failures.</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6">Summaries normally regenerate only when you edit a note. Use this once after enabling the feature, after changing the threshold, or to retry failures.</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Summarize notes longer than</div>
+        <select onchange="window._saveSetting('summaryMinChars',parseInt(this.value))" style="font-size:13px;margin-bottom:10px">
+          ${[[100,'100 characters'],[400,'400 characters'],[800,'800 characters'],[1200,'1,200 characters'],[2000,'2,000 characters']].map(([v,l])=>`<option value="${v}" ${(s.summaryMinChars??400)===v?'selected':''}>${l}</option>`).join('')}
+        </select><br>
         <button onclick="window._backfillSummaries()" ${state.backfillTotal?'disabled':''} style="font-size:12px">${state.backfillTotal?'Running\u2026':'Backfill now'}</button>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.6">Restore overwrites all data on this device. If Drive sync is connected, disconnect first, restore, then reconnect \u2014 otherwise the next sync can merge the old data back in.</div>
@@ -1888,7 +1893,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.11.0-alpha · Aug 1, 2026 8:47 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.11.1-alpha · Aug 1, 2026 9:02 PM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
@@ -2611,7 +2616,7 @@ window._exportData=async function(){
 
 window._backfillSummaries=async function(){
   const pending=flattenTasks(state.tasks).filter(t=>summaryNeeded(t)&&!t.summaryFailed);
-  if(!pending.length){alert('Every note over '+SUMMARY_MIN_CHARS+' characters already has a current summary.');return;}
+  if(!pending.length){alert('Every note over '+summaryMinChars()+' characters already has a current summary.');return;}
   const est=Math.max(0.01,pending.length*0.0004).toFixed(2);
   if(!confirm(pending.length+' note(s) need summarizing.\nEstimated cost: about $'+est+'.\n\nThis runs one at a time and may take a few minutes.\nLeave this tab open. Proceed?'))return;
   pending.forEach(t=>enqueueSummary(t.id));
