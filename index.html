@@ -132,7 +132,7 @@ textarea{resize:vertical;min-height:64px}
 .op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
 body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
-.tabbar{display:flex;gap:20px;border-bottom:0.5px solid var(--border);margin:0 0 14px;flex-shrink:0;order:-1}
+.tabbar{display:flex;gap:20px;border-bottom:0.5px solid var(--border);margin:0 0 14px;flex-shrink:0}
 .tab{display:flex;align-items:center;gap:6px;width:auto;background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;padding:0 0 8px;font-size:12px;color:var(--text2);cursor:pointer}
 .tab-on{color:var(--text);border-bottom-color:var(--text)}
 .tab-icon{font-size:13px;line-height:1}
@@ -163,7 +163,7 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
   .drag-handle{padding:6px 8px;font-size:14px}
   .tree-children{padding-left:12px;margin-left:5px}
   .op-setup{max-width:none}
-  .tabbar{order:0;gap:0;margin:8px -12px 0;padding-bottom:env(safe-area-inset-bottom);
+  .tabbar{order:9;gap:0;margin:8px -12px 0;padding-bottom:env(safe-area-inset-bottom);
     border-bottom:none;border-top:0.5px solid var(--border)}
   .tab{flex:1;flex-direction:column;gap:2px;padding:8px 0 6px;border-bottom:none;border-top:2px solid transparent;margin-top:-1px;font-size:10px}
   .tab-on{border-top-color:var(--text);border-bottom-color:transparent}
@@ -288,7 +288,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.21.0-alpha · Aug 2, 2026';
+const APP_VERSION='v0.21.1-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -2391,6 +2391,7 @@ function render(){
           </div>
         </div>`:'')}
 
+      ${renderTabs()}
 
       ${state.surface==='execute'?renderExecute():state.surface==='review'?renderReviewSurface():(()=>{return`
         <div style="flex-shrink:0">
@@ -2436,7 +2437,6 @@ function render(){
         </div>
 
 `})()}
-      ${renderTabs()}
     </div>
 
     ${state.showModal?`
