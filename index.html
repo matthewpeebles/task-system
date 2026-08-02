@@ -142,7 +142,7 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
   /* iOS zooms the page whenever a focused field is under 16px. Keep the visual
      size by scaling back down — the browser measures the computed font-size. */
   input,select,textarea{font-size:16px}
-  #f-notes{font-size:15px;line-height:1.5}
+  #f-notes{font-size:16px;line-height:1.5}
   textarea,input[type="text"],input[type="search"]{font-size:16px;transform-origin:left top}
   .app{padding:12px 12px 0;padding-top:max(12px,env(safe-area-inset-top))}
   .header{flex-wrap:wrap;gap:8px;padding:2px 0 10px;margin-bottom:12px}
@@ -279,7 +279,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.19.0-alpha · Aug 2, 2026';
+const APP_VERSION='v0.19.1-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
