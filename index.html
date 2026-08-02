@@ -55,7 +55,8 @@ input[type="checkbox"]{width:16px;height:16px;min-width:16px;flex:0 0 16px;paddi
 textarea{resize:vertical;min-height:64px}
 .app{max-width:660px;margin:0 auto;padding:16px 16px 0;padding-top:max(16px,env(safe-area-inset-top));height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .header{display:flex;align-items:center;justify-content:space-between;padding:4px 0 14px;border-bottom:0.5px solid var(--border);margin-bottom:16px}
-.header h1{font-size:16px;font-weight:500;flex:1;min-width:0}
+.header h1{font-size:16px;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.version-stamp{font-size:11px;font-weight:400;color:var(--text3);margin-left:6px}
 .header-actions{display:flex;gap:4px;align-items:center;flex-shrink:0}
 .icon-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);border:0.5px solid transparent;background:transparent;color:var(--text2);cursor:pointer;font-size:15px;position:relative;transition:all 0.15s}
 .icon-btn.active{background:var(--bg2);border-color:var(--border2);color:var(--text)}
@@ -129,6 +130,44 @@ textarea{resize:vertical;min-height:64px}
 .chosen-box{margin-top:12px;padding:12px 14px;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);font-size:13px;color:var(--teal-text);line-height:1.6}
 .op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
+.dom-pill{font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid var(--border2);background:transparent;color:var(--text2);width:auto;white-space:nowrap}
+.dom-pill.on-work{border-color:var(--blue-border);background:var(--blue-bg);color:var(--blue-text)}
+.dom-pill.on-personal{border-color:var(--teal-border);background:var(--teal-bg);color:var(--teal-text)}
+.hdr-review{width:auto;padding:4px 10px;font-size:12px;white-space:nowrap}
+
+/* ── Phone ────────────────────────────────────────────────────────────────── */
+@media (max-width:480px){
+  .app{padding:12px 12px 0;padding-top:max(12px,env(safe-area-inset-top))}
+  .header{flex-wrap:wrap;gap:8px;padding:2px 0 10px;margin-bottom:12px}
+  .header h1{flex:1 1 100%;font-size:15px}
+  .version-stamp{display:none}
+  .header-actions{flex:1 1 100%;justify-content:space-between;gap:6px}
+  .dom-pill,.hdr-review{padding:7px 14px;font-size:13px}
+  .icon-btn{min-width:38px;height:38px}
+  .stats-row{gap:6px;margin-bottom:10px}
+  .stat{padding:8px 6px}
+  .task-row{padding:11px 10px;gap:8px}
+  .rank-arrow{height:20px;width:22px}
+  .expand-btn{width:24px;height:24px}
+  .drag-handle{padding:6px 8px;font-size:14px}
+  .tree-children{padding-left:12px;margin-left:5px}
+  .op-setup{max-width:none}
+
+  /* Dialogs become bottom sheets — closer to the thumb, clear of the keyboard */
+  .overlay{align-items:flex-end;padding:0}
+  .modal{max-width:none;border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+    max-height:88dvh;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+    animation:sheet-up 0.18s ease-out}
+  @keyframes sheet-up{from{transform:translateY(12px);opacity:0.6}to{transform:none;opacity:1}}
+}
+
+/* ── Tablet ───────────────────────────────────────────────────────────────── */
+@media (min-width:481px) and (max-width:900px){
+  .app{max-width:620px}
+  .icon-btn{min-width:36px;height:36px}
+  .rank-arrow{height:18px;width:20px}
+}
+
 /* Hover effects only on devices with a real pointer — prevents iOS double-tap */
 @media (hover:hover) and (pointer:fine){
   button:hover{background:var(--bg2)}
@@ -233,7 +272,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.18.1-alpha · Aug 2, 2026';
+const APP_VERSION='v0.18.2-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -2154,11 +2193,11 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.17.3-alpha · Aug 2, 2026 12:14 AM UTC</span></h1>
+        <h1>Task system <span class="version-stamp">${APP_VERSION}</span></h1>
         <div class="header-actions">
-          <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
-          <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
-          <button class="icon-btn${state.showReview?' active':''}" onclick="setState({showReview:true,reviewDomain:state.reviewDomain||state.activeDomain,reviewResults:null,reviewError:null,showSettings:false,showArchive:false})" title="Review — tune my task list" style="width:auto;padding:4px 10px;font-size:12px">Review</button>
+          <button class="dom-pill${state.activeDomain==='work'?' on-work':''}" onclick="setState({activeDomain:'work',filterState:null})">Work</button>
+          <button class="dom-pill${state.activeDomain==='personal'?' on-personal':''}" onclick="setState({activeDomain:'personal',filterState:null})">Personal</button>
+          <button class="icon-btn hdr-review${state.showReview?' active':''}" onclick="setState({showReview:true,reviewDomain:state.reviewDomain||state.activeDomain,reviewResults:null,reviewError:null,showSettings:false,showArchive:false})" title="Review — tune my task list">Review</button>
           <button class="icon-btn${state.showSettings?' active':''}" onclick="setState({showSettings:!state.showSettings,showArchive:false})" title="Settings">⚙</button>
         </div>
       </div>
