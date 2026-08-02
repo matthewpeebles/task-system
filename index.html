@@ -132,6 +132,7 @@ textarea{resize:vertical;min-height:64px}
 .op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
 body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
+.view-btn{width:auto;font-size:12px;padding:4px 10px;border-radius:var(--radius);border:0.5px solid var(--border);background:transparent;color:var(--text2);white-space:nowrap}
 .chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .chip{width:auto;font-size:12px;padding:4px 11px;border-radius:99px;border:0.5px solid var(--border);background:var(--bg2);color:var(--text2);white-space:nowrap}
 .chip-n{color:var(--text3);margin-left:2px}
@@ -162,6 +163,7 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
   .stats-row{gap:6px;margin-bottom:10px}
   .chip-row{gap:5px;margin-bottom:10px}
   .chip{font-size:12px;padding:6px 12px}
+  .view-btn{padding:6px 11px}
   .stat{padding:8px 6px}
   .task-row{padding:11px 10px;gap:8px}
   .rank-arrow{height:20px;width:22px}
@@ -294,7 +296,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.22.1-alpha · Aug 2, 2026';
+const APP_VERSION='v0.22.2-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -2428,13 +2430,9 @@ function render(){
             }).join('')}
           </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
-          <div class="view-menu-anchor" style="display:flex;align-items:center;gap:4px;position:relative">
-            <button class="ghost" onclick="setState({showViewMenu:!state.showViewMenu})" title="View options" style="font-size:15px;color:var(--text3);width:auto;padding:3px 7px">⚙︎</button>
-            ${state.showViewMenu?`
-              <div style="position:absolute;top:100%;left:0;z-index:50;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);padding:5px;min-width:172px;box-shadow:0 4px 16px rgba(0,0,0,0.12)">
-                ${domainTasks.some(t=>t.children?.length)?`<button class="ghost" style="font-size:12px;width:100%;text-align:left;padding:7px 9px" onclick="window._toggleExpandAll()">${anyExpandedIn(state.activeDomain)?'Collapse all':'Expand all'}</button>`:''}
-                ${flattenTasks(domainTasks).some(t=>t.closed)?`<button class="ghost" style="font-size:12px;width:100%;text-align:left;padding:7px 9px" onclick="setState({showClosedSubtasks:!state.showClosedSubtasks,showViewMenu:false})">${state.showClosedSubtasks?'Hide closed':'Show closed'}</button>`:''}
-              </div>`:''}
+          <div style="display:flex;align-items:center;gap:6px;min-width:0">
+            ${domainTasks.some(t=>t.children?.length)?`<button class="view-btn" onclick="window._toggleExpandAll()">${anyExpandedIn(state.activeDomain)?'Collapse all':'Expand all'}</button>`:''}
+            ${flattenTasks(domainTasks).some(t=>t.closed)?`<button class="view-btn" onclick="setState({showClosedSubtasks:!state.showClosedSubtasks})">${state.showClosedSubtasks?'Hide closed':'Show closed'}</button>`:''}
           </div>
           <button class="add-btn" onclick="setState({showModal:true,modalParentId:null})" title="New task" style="margin-top:0;width:auto;padding:5px 14px;${state.activeDomain==='work'?'background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue-text)':'background:var(--teal-bg);border-color:var(--teal-border);color:var(--teal-text)'}">
             <span style="font-size:17px;line-height:1">+</span>
