@@ -142,6 +142,7 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
   /* iOS zooms the page whenever a focused field is under 16px. Keep the visual
      size by scaling back down — the browser measures the computed font-size. */
   input,select,textarea{font-size:16px}
+  #f-notes{font-size:15px;line-height:1.5}
   textarea,input[type="text"],input[type="search"]{font-size:16px;transform-origin:left top}
   .app{padding:12px 12px 0;padding-top:max(12px,env(safe-area-inset-top))}
   .header{flex-wrap:wrap;gap:8px;padding:2px 0 10px;margin-bottom:12px}
@@ -278,7 +279,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.18.3-alpha · Aug 2, 2026';
+const APP_VERSION='v0.19.0-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -1485,7 +1486,7 @@ function renderForm(opts){
       <!-- Notes — always visible, placeholder changes by state -->
       <div class="form-row">
         <div class="form-label" id="f-notes-label">${stateVal==='not-actionable'?'Thinking space — what might the next step be?':'Notes (optional)'}</div>
-        <textarea id="f-notes" name="notes" style="min-height:44px"
+        <textarea id="f-notes" name="notes" style="min-height:44px;resize:none;overflow-y:hidden" oninput="window._autoGrow(this)"
           placeholder="${stateVal==='not-actionable'?'Use this to think through what needs to happen…':'Additional context…'}">${escHtml(initial.notes||'')}</textarea>
       </div>
 
@@ -1525,6 +1526,16 @@ window._formStateChange=function(val){
   if(notesLabel)notesLabel.textContent=val==='not-actionable'?'Thinking space — what might the next step be?':'Notes (optional)';
   const notesEl=document.getElementById('f-notes');
   if(notesEl)notesEl.placeholder=val==='not-actionable'?'Use this to think through what needs to happen…':'Additional context…';
+};
+
+// Grow a textarea to fit its content, capped so it can't push the sheet off-screen.
+window._autoGrow=function(el){
+  if(!el)return;
+  const cap=Math.max(120,Math.round(window.innerHeight*0.35));
+  el.style.height='auto';
+  const h=Math.min(el.scrollHeight,cap);
+  el.style.height=h+'px';
+  el.style.overflowY=el.scrollHeight>cap?'auto':'hidden';
 };
 
 // Dedup: runs on every keystroke with 400ms debounce, updates div in-place — no re-render.
@@ -2445,6 +2456,9 @@ function render(){
   if(newSettingsEl&&savedSettingsScroll)newSettingsEl.scrollTop=savedSettingsScroll;
   const newOpEl=document.getElementById('op-mode');
   if(newOpEl&&savedOpScroll)newOpEl.scrollTop=savedOpScroll;
+
+  // Size the notes field to its content
+  window._autoGrow(document.getElementById('f-notes'));
 
   // Auto-focus title field and wire Enter/Esc when a modal is open
   if(state.showModal||state.editTask){
