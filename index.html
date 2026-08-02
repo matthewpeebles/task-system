@@ -233,6 +233,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
+const APP_VERSION='v0.18.0-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -1954,6 +1955,7 @@ function renderSettings(){
         <button onclick="window._importPick()" style="padding:7px">Restore&hellip;</button>
       </div>
       <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="window._importData(this)"/>
+      <div style="font-size:11px;color:var(--text3);margin-top:10px">Version ${APP_VERSION}</div>
       <div style="border-top:0.5px solid var(--border);margin-top:12px;padding-top:12px">
         <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:4px">Backfill summaries</div>
         ${(()=>{
