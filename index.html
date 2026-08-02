@@ -294,7 +294,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.22.0-alpha · Aug 2, 2026';
+const APP_VERSION='v0.22.1-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -2427,7 +2427,6 @@ function render(){
                 style="${on?`background:${tint};color:${txt};border-color:${tone?`var(--${tone}-border)`:'var(--border2)'}`:''}">${label} <span class="chip-n">${count}</span></button>`;
             }).join('')}
           </div>
-        </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
           <div class="view-menu-anchor" style="display:flex;align-items:center;gap:4px;position:relative">
             <button class="ghost" onclick="setState({showViewMenu:!state.showViewMenu})" title="View options" style="font-size:15px;color:var(--text3);width:auto;padding:3px 7px">⚙︎</button>
