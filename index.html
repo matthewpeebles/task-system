@@ -75,7 +75,8 @@ textarea{resize:vertical;min-height:64px}
 .task-row{display:flex;align-items:flex-start;gap:6px;padding:9px 10px;border-radius:var(--radius);border:0.5px solid var(--border);background:var(--bg2);transition:border-color 0.15s}
 .task-row.top{border-color:var(--border2)}
 .task-row.drag-source{opacity:0.35;border-color:var(--blue-border)}
-.drag-handle{cursor:grab;color:var(--text3);font-size:12px;padding:2px 3px;flex-shrink:0;margin-top:2px;line-height:1;user-select:none}
+.drag-handle{cursor:grab;color:var(--text3);font-size:12px;padding:2px 3px;flex-shrink:0;margin-top:2px;line-height:1;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 .drag-handle:active{cursor:grabbing}
 #drag-ghost{position:fixed;pointer-events:none;z-index:9999;background:var(--bg);border:1px solid var(--blue-border);border-radius:var(--radius);padding:7px 12px;font-size:13px;font-weight:500;color:var(--blue-text);box-shadow:0 4px 16px rgba(0,0,0,0.18);max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #drag-line{position:fixed;pointer-events:none;z-index:9998;height:2px;background:var(--blue-text);border-radius:2px;display:none}
@@ -130,6 +131,7 @@ textarea{resize:vertical;min-height:64px}
 .chosen-box{margin-top:12px;padding:12px 14px;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);font-size:13px;color:var(--teal-text);line-height:1.6}
 .op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
+body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
 .dom-pill{font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid var(--border2);background:transparent;color:var(--text2);width:auto;white-space:nowrap}
 .dom-pill.on-work{border-color:var(--blue-border);background:var(--blue-bg);color:var(--blue-text)}
 .dom-pill.on-personal{border-color:var(--teal-border);background:var(--teal-bg);color:var(--teal-text)}
@@ -137,6 +139,10 @@ textarea{resize:vertical;min-height:64px}
 
 /* ── Phone ────────────────────────────────────────────────────────────────── */
 @media (max-width:480px){
+  /* iOS zooms the page whenever a focused field is under 16px. Keep the visual
+     size by scaling back down — the browser measures the computed font-size. */
+  input,select,textarea{font-size:16px}
+  textarea,input[type="text"],input[type="search"]{font-size:16px;transform-origin:left top}
   .app{padding:12px 12px 0;padding-top:max(12px,env(safe-area-inset-top))}
   .header{flex-wrap:wrap;gap:8px;padding:2px 0 10px;margin-bottom:12px}
   .header h1{flex:1 1 100%;font-size:15px}
@@ -272,7 +278,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.18.2-alpha · Aug 2, 2026';
+const APP_VERSION='v0.18.3-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -2528,6 +2534,7 @@ window._dragPointerDown=function(e,id){
   if(srcRow)srcRow.classList.add('drag-source');
 
   function onMove(ev){
+    if(ev.cancelable)ev.preventDefault();
     g.style.left=ev.clientX+14+'px';
     g.style.top=ev.clientY-14+'px';
 
@@ -2549,8 +2556,10 @@ window._dragPointerDown=function(e,id){
     g.style.display='none';
     l.style.display='none';
     if(srcRow)srcRow.classList.remove('drag-source');
+    document.body.classList.remove('dragging');
     document.removeEventListener('pointermove',onMove);
     document.removeEventListener('pointerup',onUp);
+    document.removeEventListener('pointercancel',onUp);
 
     const{id:dragId,siblings:sibs,insertIdx}=_pd;
     _pd={id:null,siblings:null,insertIdx:null};
@@ -2572,8 +2581,11 @@ window._dragPointerDown=function(e,id){
     setState({tasks});
   }
 
-  document.addEventListener('pointermove',onMove);
+  document.body.classList.add('dragging');
+  if(e.target&&e.target.setPointerCapture){try{e.target.setPointerCapture(e.pointerId);}catch(err){}}
+  document.addEventListener('pointermove',onMove,{passive:false});
   document.addEventListener('pointerup',onUp);
+  document.addEventListener('pointercancel',onUp);
 };
 
 function applyPlaceAfter(taskId,placeAfterVal){
