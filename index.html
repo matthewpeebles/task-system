@@ -132,6 +132,10 @@ textarea{resize:vertical;min-height:64px}
 .op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
 body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{width:auto;font-size:12px;padding:4px 11px;border-radius:99px;border:0.5px solid var(--border);background:var(--bg2);color:var(--text2);white-space:nowrap}
+.chip-n{color:var(--text3);margin-left:2px}
+.chip-on .chip-n{color:inherit;opacity:0.7}
 .tabbar{display:flex;gap:20px;border-bottom:0.5px solid var(--border);margin:0 0 14px;flex-shrink:0}
 .tab{display:flex;align-items:center;gap:6px;width:auto;background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;padding:0 0 8px;font-size:12px;color:var(--text2);cursor:pointer}
 .tab-on{color:var(--text);border-bottom-color:var(--text)}
@@ -156,6 +160,8 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
   .dom-pill,.hdr-review{padding:7px 14px;font-size:13px}
   .icon-btn{min-width:38px;height:38px}
   .stats-row{gap:6px;margin-bottom:10px}
+  .chip-row{gap:5px;margin-bottom:10px}
+  .chip{font-size:12px;padding:6px 12px}
   .stat{padding:8px 6px}
   .task-row{padding:11px 10px;gap:8px}
   .rank-arrow{height:20px;width:22px}
@@ -288,7 +294,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.21.1-alpha · Aug 2, 2026';
+const APP_VERSION='v0.22.0-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -1054,6 +1060,7 @@ let state={
   confirmDeleteId:null,
   filterState:null,
   surface:'collect',
+  showViewMenu:false,
   opDismissed:new Map(), // taskId -> expiry timestamp (ms)
   opDomain:'work',
   opAvail:'',
@@ -1568,6 +1575,15 @@ window._formStateChange=function(val){
 window._setContext=function(d){
   setState({activeDomain:d,opDomain:d,reviewDomain:d,filterState:null,
     opResults:null,opChosen:null,opDismissed:new Map(),reviewResults:null,reviewError:null});
+};
+function anyExpandedIn(domain){
+  return state.tasks.filter(t=>t.domain===domain)
+    .some(t=>(t.children||[]).length&&expandedSet.has(t.id));
+}
+window._toggleExpandAll=function(){
+  const d=state.activeDomain;
+  state.showViewMenu=false;
+  if(anyExpandedIn(d))window._collapseAllTop(d); else window._expandAllTop(d);
 };
 window._setSurface=function(sf){
   const patch={surface:sf};
@@ -2241,7 +2257,10 @@ function renderReview(){
 // work (Drive sync on window focus, the work-hours watcher) can re-render mid-click and
 // silently swallow it. Defer any render that arrives while a pointer is down.
 let _pointerDown=false,_pendingRender=false;
-document.addEventListener('pointerdown',()=>{_pointerDown=true;},true);
+document.addEventListener('pointerdown',e=>{
+  _pointerDown=true;
+  if(state.showViewMenu&&!(e.target.closest&&e.target.closest('.view-menu-anchor')))state.showViewMenu=false;
+},true);
 function _pointerReleased(){
   if(!_pointerDown)return;
   _pointerDown=false;
@@ -2395,35 +2414,31 @@ function render(){
 
       ${state.surface==='execute'?renderExecute():state.surface==='review'?renderReviewSurface():(()=>{return`
         <div style="flex-shrink:0">
-          <div class="stats-row">
-          <div class="stat${state.filterState===null?' stat-active':''}" onclick="setState({filterState:null})" style="cursor:pointer">
-            <div class="stat-num">${domainFlat.filter(t=>!t.closed).length}</div>
-            <div class="stat-label">All tasks</div>
-          </div>
-          <div class="stat${state.filterState==='actionable'?' stat-active':''}" onclick="setState({filterState:state.filterState==='actionable'?null:'actionable'})" style="cursor:pointer">
-            <div class="stat-num" style="color:var(--teal-text)">${actionableCount}</div>
-            <div class="stat-label">Actionable</div>
-          </div>
-          <div class="stat${state.filterState==='waiting'?' stat-active':''}" onclick="setState({filterState:state.filterState==='waiting'?null:'waiting'})" style="cursor:pointer">
-            <div class="stat-num" style="color:var(--amber-text)">${waitingCount}</div>
-            <div class="stat-label">Waiting</div>
-          </div>
-          <div class="stat${state.filterState==='needs-definition'?' stat-active':''}" onclick="setState({filterState:state.filterState==='needs-definition'?null:'needs-definition'})" style="cursor:pointer">
-            <div class="stat-num" style="color:var(--red-text)">${notActionableCount}</div>
-            <div class="stat-label">Needs definition</div>
+          <div class="chip-row">
+            ${[['all','All',domainFlat.filter(t=>!t.closed).length,''],
+               ['actionable','Actionable',actionableCount,'teal'],
+               ['waiting','Waiting',waitingCount,'amber'],
+               ['needs-definition','Needs def',notActionableCount,'red']
+              ].map(([key,label,count,tone])=>{
+              const on=(key==='all')?state.filterState===null:state.filterState===key;
+              const tint=tone?`var(--${tone}-bg)`:'var(--bg3)';
+              const txt=tone?`var(--${tone}-text)`:'var(--text)';
+              return `<button class="chip${on?' chip-on':''}" onclick="setState({filterState:${key==='all'?'null':`state.filterState==='${key}'?null:'${key}'`}})"
+                style="${on?`background:${tint};color:${txt};border-color:${tone?`var(--${tone}-border)`:'var(--border2)'}`:''}">${label} <span class="chip-n">${count}</span></button>`;
+            }).join('')}
           </div>
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <div class="section-label" style="margin-bottom:0">${state.activeDomain} tasks — ranked by priority</div>
-            ${flattenTasks(domainTasks).some(t=>t.closed)?`<button class="ghost" style="font-size:11px;color:var(--text3)" onclick="setState({showClosedSubtasks:!state.showClosedSubtasks})">${state.showClosedSubtasks?'Hide closed':'Show closed'}</button>`:''}
-            ${domainTasks.some(t=>t.children?.length)?`
-              <button class="ghost" style="font-size:11px;color:var(--text3)" onclick="window._expandAllTop('${state.activeDomain}')" title="Expand all">⇲ All</button>
-              <button class="ghost" style="font-size:11px;color:var(--text3)" onclick="window._collapseAllTop('${state.activeDomain}')" title="Collapse all">⇱ All</button>
-            `:''}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+          <div class="view-menu-anchor" style="display:flex;align-items:center;gap:4px;position:relative">
+            <button class="ghost" onclick="setState({showViewMenu:!state.showViewMenu})" title="View options" style="font-size:15px;color:var(--text3);width:auto;padding:3px 7px">⚙︎</button>
+            ${state.showViewMenu?`
+              <div style="position:absolute;top:100%;left:0;z-index:50;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);padding:5px;min-width:172px;box-shadow:0 4px 16px rgba(0,0,0,0.12)">
+                ${domainTasks.some(t=>t.children?.length)?`<button class="ghost" style="font-size:12px;width:100%;text-align:left;padding:7px 9px" onclick="window._toggleExpandAll()">${anyExpandedIn(state.activeDomain)?'Collapse all':'Expand all'}</button>`:''}
+                ${flattenTasks(domainTasks).some(t=>t.closed)?`<button class="ghost" style="font-size:12px;width:100%;text-align:left;padding:7px 9px" onclick="setState({showClosedSubtasks:!state.showClosedSubtasks,showViewMenu:false})">${state.showClosedSubtasks?'Hide closed':'Show closed'}</button>`:''}
+              </div>`:''}
           </div>
-          <button class="add-btn" onclick="setState({showModal:true,modalParentId:null})" style="margin-top:0;width:auto;padding:5px 12px;${state.activeDomain==='work'?'background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue-text)':'background:var(--teal-bg);border-color:var(--teal-border);color:var(--teal-text)'}">
-            <span style="font-size:16px;line-height:1">+</span> Add ${state.activeDomain} task
+          <button class="add-btn" onclick="setState({showModal:true,modalParentId:null})" title="New task" style="margin-top:0;width:auto;padding:5px 14px;${state.activeDomain==='work'?'background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue-text)':'background:var(--teal-bg);border-color:var(--teal-border);color:var(--teal-text)'}">
+            <span style="font-size:17px;line-height:1">+</span>
           </button>
         </div>
         </div>
