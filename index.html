@@ -279,7 +279,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.19.1-alpha · Aug 2, 2026';
+const APP_VERSION='v0.20.1-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -1058,6 +1058,18 @@ function setState(patch){
 }
 
 // ── Task mutations ─────────────────────────────────────────────────────────
+// A dump with no title still needs one. Take the first sensible line, trimmed to
+// something readable, and let Review flag it later.
+function titleFromRaw(raw){
+  const line=(raw||'').split('\n').map(l=>l.trim()).find(l=>l.length>0);
+  if(!line)return '';
+  const clean=line.replace(/^[-*•\d.)\s]+/,'').trim()||line.trim();
+  if(clean.length<=60)return clean;
+  const cut=clean.slice(0,60);
+  const sp=cut.lastIndexOf(' ');
+  return (sp>30?cut.slice(0,sp):cut)+'…';
+}
+
 function addTask(form,parentId,placeAfterVal){
   const isTop=!parentId;
   const rank=isTop?state.tasks.filter(t=>t.domain===form.domain).length+1:null;
@@ -1067,7 +1079,7 @@ function addTask(form,parentId,placeAfterVal){
   const t={id:genId(),title:form.title.trim(),domain:form.domain,state:form.state,
     duration:effectiveDuration,dueDate:unifiedDate,
     waitingWho:form.waitingWho||null,waitingBy:unifiedDate,
-    notes:form.notes||'',children:[],rank,createdAt:now,updatedAt:now};
+    notes:form.notes||'',raw:form.raw||'',children:[],rank,createdAt:now,updatedAt:now};
   let tasks;
   if(parentId){
     // Inherit domain from top-level ancestor
@@ -1126,7 +1138,7 @@ function editTaskFn(id,form){
   const preBlockedState=(form.state==='blocked'&&existingTask?.state!=='blocked')
     ?(existingTask?.state||'not-actionable'):existingTask?.preBlockedState||null;
   let tasks=updateTask(state.tasks,id,{
-    title:form.title.trim(),domain:effectiveDomain,state:form.state,
+    title:form.title.trim(),domain:effectiveDomain,state:form.state,raw:form.raw??t.raw??'',
     duration:form.duration||null,dueDate:form.dueDate||form.waitingBy||null,
     waitingWho:form.waitingWho||null,waitingBy:form.dueDate||form.waitingBy||null,
     notes:form.notes||'',
@@ -1363,6 +1375,20 @@ function renderForm(opts){
 
   return `
     <div id="taskform">
+      ${isEdit?`
+      <div class="form-row" style="margin-bottom:10px">
+        <div id="f-raw-toggle" onclick="window._toggleRaw()" style="font-size:11px;color:var(--text3);cursor:pointer;display:${initial.raw?'none':'block'}">+ Add to dump</div>
+        <div id="f-raw-wrap" style="display:${initial.raw?'block':'none'}">
+          <div class="form-label">Dump</div>
+          <textarea id="f-raw" name="raw" style="min-height:44px;resize:none;overflow-y:hidden" oninput="window._autoGrow(this)" placeholder="Anything else, unsorted…">${escHtml(initial.raw||'')}</textarea>
+        </div>
+      </div>`:`
+      <div class="form-row">
+        <div class="form-label">Dump</div>
+        <textarea id="f-raw" name="raw" style="min-height:62px;resize:none;overflow-y:hidden" oninput="window._autoGrow(this)" placeholder="Dump anything here — sort it out later"></textarea>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Save with just this and it becomes a task needing definition.</div>
+      </div>
+      <div style="border-top:0.5px solid var(--border);margin:14px 0"></div>`}
       <div id="f-dedup" style="display:none" class="dedup"></div>
       <div class="form-row">
         <div class="form-label">Title</div>
@@ -1529,6 +1555,13 @@ window._formStateChange=function(val){
 };
 
 // Grow a textarea to fit its content, capped so it can't push the sheet off-screen.
+window._toggleRaw=function(){
+  const w=document.getElementById('f-raw-wrap'),t=document.getElementById('f-raw-toggle');
+  if(!w)return;
+  w.style.display='block'; if(t)t.style.display='none';
+  const el=document.getElementById('f-raw'); if(el){window._autoGrow(el);el.focus();}
+};
+
 window._autoGrow=function(el){
   if(!el)return;
   const cap=Math.max(120,Math.round(window.innerHeight*0.35));
@@ -2459,6 +2492,7 @@ function render(){
 
   // Size the notes field to its content
   window._autoGrow(document.getElementById('f-notes'));
+  window._autoGrow(document.getElementById('f-raw'));
 
   // Auto-focus title field and wire Enter/Esc when a modal is open
   if(state.showModal||state.editTask){
@@ -2798,7 +2832,9 @@ window._formSave=function(){
   const parentVal=g('f-parent');
   const effectiveParentId=parentVal||state.modalParentId||null;
   const placeAfterVal=g('f-placeafter');
+  const raw=g('f-raw');
   const form={
+    raw,
     title:g('f-title'),
     domain:g('f-domain')||state.activeDomain,
     state:stateVal,
@@ -2809,7 +2845,14 @@ window._formSave=function(){
     notes,
     blockedBy:blockerId,
   };
-  if(!form.title.trim())return;
+  // Capture must cost no decisions: a dump with no title is still a valid task.
+  if(!form.title.trim()){
+    if(raw.trim()){
+      form.title=titleFromRaw(raw);
+      form.state='not-actionable';
+    }
+    if(!form.title.trim())return;
+  }
   if(state.editTask){
     const taskId=state.editTask.id;
     const currentParent=findParent(state.tasks,taskId);
