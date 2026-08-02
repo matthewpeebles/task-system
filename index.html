@@ -44,13 +44,10 @@
 }}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text);background:var(--bg3);line-height:1.5;height:100vh;overflow:hidden}
 button{font-family:inherit;font-size:13px;cursor:pointer;border-radius:var(--radius);border:0.5px solid var(--border2);background:transparent;color:var(--text);padding:5px 12px;transition:all 0.15s}
-button:hover{background:var(--bg2)}
 button:active{transform:scale(0.98)}
 button:disabled{opacity:0.45;cursor:not-allowed}
 button.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
-button.primary:hover{opacity:0.85}
 button.ghost{border-color:transparent;padding:3px 7px}
-button.ghost:hover{background:var(--bg2)}
 button.danger-btn{color:var(--red-text)}
 input,select,textarea{font-family:inherit;font-size:13px;color:var(--text);background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);padding:7px 10px;width:100%;outline:none;transition:border-color 0.15s}
 input:focus,select:focus,textarea:focus{border-color:var(--text3)}
@@ -61,33 +58,27 @@ textarea{resize:vertical;min-height:64px}
 .header h1{font-size:16px;font-weight:500;flex:1;min-width:0}
 .header-actions{display:flex;gap:4px;align-items:center;flex-shrink:0}
 .icon-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);border:0.5px solid transparent;background:transparent;color:var(--text2);cursor:pointer;font-size:15px;position:relative;transition:all 0.15s}
-.icon-btn:hover{background:var(--bg2);border-color:var(--border);color:var(--text)}
 .icon-btn.active{background:var(--bg2);border-color:var(--border2);color:var(--text)}
 .icon-btn-badge{position:absolute;top:2px;right:2px;background:var(--text2);color:var(--bg);font-size:9px;font-weight:600;border-radius:99px;padding:0 4px;min-width:14px;height:14px;display:flex;align-items:center;justify-content:center;line-height:1}
 .domain-tabs{display:flex;gap:6px;margin-bottom:14px}
 .domain-tab{font-size:12px;padding:4px 14px;border-radius:99px;border:0.5px solid var(--border2);color:var(--text2);cursor:pointer;background:transparent;transition:all 0.15s}
-.domain-tab:hover{background:var(--bg2)}
 .domain-tab.work{background:var(--blue-bg);color:var(--blue-text);border-color:var(--blue-border)}
 .domain-tab.personal{background:var(--teal-bg);color:var(--teal-text);border-color:var(--teal-border)}
 .stats-row{display:flex;gap:8px;margin-bottom:14px}
 .stat{flex:1;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;text-align:center;transition:all 0.15s}
-.stat:hover{border-color:var(--border2);background:var(--bg3)}
 .stat-active{background:var(--bg);border-color:var(--border2);box-shadow:0 0 0 1px var(--border2)}
 .stat-num{font-size:20px;font-weight:500;line-height:1}
 .stat-label{font-size:11px;color:var(--text2);margin-top:3px}
 .section-label{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px}
 .task-tree{display:flex;flex-direction:column;gap:4px;overflow-y:auto;flex:1;padding-bottom:16px}
 .task-row{display:flex;align-items:flex-start;gap:6px;padding:9px 10px;border-radius:var(--radius);border:0.5px solid var(--border);background:var(--bg2);transition:border-color 0.15s}
-.task-row:hover{border-color:var(--border2)}
 .task-row.top{border-color:var(--border2)}
 .task-row.drag-source{opacity:0.35;border-color:var(--blue-border)}
 .drag-handle{cursor:grab;color:var(--text3);font-size:12px;padding:2px 3px;flex-shrink:0;margin-top:2px;line-height:1;user-select:none}
-.drag-handle:hover{color:var(--text2)}
 .drag-handle:active{cursor:grabbing}
 #drag-ghost{position:fixed;pointer-events:none;z-index:9999;background:var(--bg);border:1px solid var(--blue-border);border-radius:var(--radius);padding:7px 12px;font-size:13px;font-weight:500;color:var(--blue-text);box-shadow:0 4px 16px rgba(0,0,0,0.18);max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #drag-line{position:fixed;pointer-events:none;z-index:9998;height:2px;background:var(--blue-text);border-radius:2px;display:none}
 .expand-btn{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text3);font-size:10px;margin-top:2px;cursor:pointer;border:none;background:transparent;border-radius:3px}
-.expand-btn:hover{background:var(--bg3);color:var(--text)}
 .task-main{flex:1;min-width:0}
 .task-title{font-size:13px;font-weight:500;word-break:break-word;margin-bottom:4px}
 .task-meta{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
@@ -102,10 +93,8 @@ textarea{resize:vertical;min-height:64px}
 .task-actions{display:flex;gap:2px;flex-shrink:0;align-items:flex-start}
 .rank-arrows{display:flex;flex-direction:column;gap:1px}
 .rank-arrow{width:16px;height:14px;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--text3);border-radius:3px;cursor:pointer;border:none;background:transparent;padding:0}
-.rank-arrow:hover{background:var(--bg3);color:var(--text)}
 .tree-children{padding-left:20px;margin-top:4px;display:flex;flex-direction:column;gap:4px;border-left:0.5px solid var(--border);margin-left:8px}
 .add-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);border:0.5px solid var(--border2);color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;width:auto;background:var(--bg2);margin-top:0;transition:all 0.15s}
-.add-btn:hover{filter:brightness(0.93)}
 .empty{text-align:center;padding:40px 20px;color:var(--text2);font-size:13px;line-height:1.8}
 .overdue-banner{background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--amber-text);line-height:1.6}
 /* Modal */
@@ -124,7 +113,6 @@ textarea{resize:vertical;min-height:64px}
 .domain-select{display:flex;gap:6px;margin-bottom:12px}
 .domain-select button{flex:1;padding:7px}
 .op-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:8px;cursor:pointer;transition:all 0.15s}
-.op-card:hover{border-color:var(--border2)}
 .op-card.chosen-work{border-color:var(--blue-border);background:var(--blue-bg)}
 .op-card.chosen-personal{border-color:var(--teal-border);background:var(--teal-bg)}
 .op-card-inner{display:flex;gap:10px}
@@ -141,6 +129,21 @@ textarea{resize:vertical;min-height:64px}
 .chosen-box{margin-top:12px;padding:12px 14px;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);font-size:13px;color:var(--teal-text);line-height:1.6}
 .op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
+/* Hover effects only on devices with a real pointer — prevents iOS double-tap */
+@media (hover:hover) and (pointer:fine){
+  button:hover{background:var(--bg2)}
+  button.primary:hover{opacity:0.85}
+  button.ghost:hover{background:var(--bg2)}
+  .icon-btn:hover{background:var(--bg2);border-color:var(--border);color:var(--text)}
+  .domain-tab:hover{background:var(--bg2)}
+  .stat:hover{border-color:var(--border2);background:var(--bg3)}
+  .task-row:hover{border-color:var(--border2)}
+  .drag-handle:hover{color:var(--text2)}
+  .expand-btn:hover{background:var(--bg3);color:var(--text)}
+  .rank-arrow:hover{background:var(--bg3);color:var(--text)}
+  .add-btn:hover{filter:brightness(0.93)}
+  .op-card:hover{border-color:var(--border2)}
+}
 </style>
 </head>
 <body>
@@ -2120,7 +2123,21 @@ function renderReview(){
   </div>`;
 }
 
+// A click only fires if mousedown and mouseup land on the same element. Background
+// work (Drive sync on window focus, the work-hours watcher) can re-render mid-click and
+// silently swallow it. Defer any render that arrives while a pointer is down.
+let _pointerDown=false,_pendingRender=false;
+document.addEventListener('pointerdown',()=>{_pointerDown=true;},true);
+function _pointerReleased(){
+  if(!_pointerDown)return;
+  _pointerDown=false;
+  if(_pendingRender){_pendingRender=false;setTimeout(render,0);}
+}
+document.addEventListener('pointerup',_pointerReleased,true);
+document.addEventListener('pointercancel',_pointerReleased,true);
+
 function render(){
+  if(_pointerDown){_pendingRender=true;return;}
   const flat=flattenTasks(state.tasks);
 
   const domainFlat=flattenTasks(state.tasks.filter(t=>t.domain===state.activeDomain));
@@ -2132,7 +2149,7 @@ function render(){
   const html=`
     <div class="app">
       <div class="header">
-        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.17.1-alpha · Aug 1, 2026 11:48 PM UTC</span></h1>
+        <h1>Task system <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">v0.17.3-alpha · Aug 2, 2026 12:14 AM UTC</span></h1>
         <div class="header-actions">
           <button onclick="setState({activeDomain:'work',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.activeDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.activeDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
           <button onclick="setState({activeDomain:'personal',filterState:null})" style="font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid ${state.activeDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.activeDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.activeDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
