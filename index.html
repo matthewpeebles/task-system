@@ -132,6 +132,10 @@ textarea{resize:vertical;min-height:64px}
 .op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
 body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
+.tabbar{display:flex;gap:20px;border-bottom:0.5px solid var(--border);margin:0 0 14px;flex-shrink:0;order:-1}
+.tab{display:flex;align-items:center;gap:6px;width:auto;background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;padding:0 0 8px;font-size:12px;color:var(--text2);cursor:pointer}
+.tab-on{color:var(--text);border-bottom-color:var(--text)}
+.tab-icon{font-size:13px;line-height:1}
 .dom-pill{font-size:12px;padding:4px 12px;border-radius:99px;border:0.5px solid var(--border2);background:transparent;color:var(--text2);width:auto;white-space:nowrap}
 .dom-pill.on-work{border-color:var(--blue-border);background:var(--blue-bg);color:var(--blue-text)}
 .dom-pill.on-personal{border-color:var(--teal-border);background:var(--teal-bg);color:var(--teal-text)}
@@ -159,6 +163,11 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
   .drag-handle{padding:6px 8px;font-size:14px}
   .tree-children{padding-left:12px;margin-left:5px}
   .op-setup{max-width:none}
+  .tabbar{order:0;gap:0;margin:8px -12px 0;padding-bottom:env(safe-area-inset-bottom);
+    border-bottom:none;border-top:0.5px solid var(--border)}
+  .tab{flex:1;flex-direction:column;gap:2px;padding:8px 0 6px;border-bottom:none;border-top:2px solid transparent;margin-top:-1px;font-size:10px}
+  .tab-on{border-top-color:var(--text);border-bottom-color:transparent}
+  .tab-icon{font-size:17px}
 
   /* Dialogs become bottom sheets — closer to the thumb, clear of the keyboard */
   .overlay{align-items:flex-end;padding:0}
@@ -279,7 +288,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.20.1-alpha · Aug 2, 2026';
+const APP_VERSION='v0.21.0-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -1044,6 +1053,7 @@ let state={
   closeBlockedCount:0,
   confirmDeleteId:null,
   filterState:null,
+  surface:'collect',
   opDismissed:new Map(), // taskId -> expiry timestamp (ms)
   opDomain:'work',
   opAvail:'',
@@ -1555,6 +1565,16 @@ window._formStateChange=function(val){
 };
 
 // Grow a textarea to fit its content, capped so it can't push the sheet off-screen.
+window._setContext=function(d){
+  setState({activeDomain:d,opDomain:d,reviewDomain:d,filterState:null,
+    opResults:null,opChosen:null,opDismissed:new Map(),reviewResults:null,reviewError:null});
+};
+window._setSurface=function(sf){
+  const patch={surface:sf};
+  if(sf!=='collect'&&state.filterState==='smart')patch.filterState=null;
+  setState(patch);
+};
+
 window._toggleRaw=function(){
   const w=document.getElementById('f-raw-wrap'),t=document.getElementById('f-raw-toggle');
   if(!w)return;
@@ -2230,97 +2250,68 @@ function _pointerReleased(){
 document.addEventListener('pointerup',_pointerReleased,true);
 document.addEventListener('pointercancel',_pointerReleased,true);
 
-function render(){
-  if(_pointerDown){_pendingRender=true;return;}
-  const flat=flattenTasks(state.tasks);
-
-  const domainFlat=flattenTasks(state.tasks.filter(t=>t.domain===state.activeDomain));
-  const actionableCount=domainFlat.filter(t=>t.state==='actionable'&&!t.closed).length;
-  const waitingCount=domainFlat.filter(t=>t.state==='waiting'&&!t.closed).length;
-  const notActionableCount=domainFlat.filter(t=>needsDefinition(t)).length;
-  const domainTasks=state.tasks.filter(t=>t.domain===state.activeDomain).sort((a,b)=>(a.rank||99)-(b.rank||99));
-
-  const html=`
-    <div class="app">
-      <div class="header">
-        <h1>Task system <span class="version-stamp">${APP_VERSION}</span></h1>
-        <div class="header-actions">
-          <button class="dom-pill${state.activeDomain==='work'?' on-work':''}" onclick="setState({activeDomain:'work',filterState:null})">Work</button>
-          <button class="dom-pill${state.activeDomain==='personal'?' on-personal':''}" onclick="setState({activeDomain:'personal',filterState:null})">Personal</button>
-          <button class="icon-btn hdr-review${state.showReview?' active':''}" onclick="setState({showReview:true,reviewDomain:state.reviewDomain||state.activeDomain,reviewResults:null,reviewError:null,showSettings:false,showArchive:false})" title="Review — tune my task list">Review</button>
-          <button class="icon-btn${state.showSettings?' active':''}" onclick="setState({showSettings:!state.showSettings,showArchive:false})" title="Settings">⚙</button>
-        </div>
+function renderReviewSurface(){
+  const dom=state.reviewDomain||state.activeDomain;
+  const saved=loadReview(dom);
+  const obs=state.reviewResults||(saved?saved.observations:null);
+  const days=saved?Math.floor((Date.now()-new Date(saved.ranAt))/86400000):null;
+  const ageLabel=days===null?'':days===0?'today':days===1?'yesterday':days+' days ago';
+  const doneCount=(obs||[]).filter(o=>o.done).length;
+  const sev={high:'var(--red-text)',medium:'var(--amber-text)',low:'var(--text3)'};
+  return `
+    <div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0 12px">
+      <div style="font-size:11px;color:${days>=8?'var(--amber-text)':'var(--text3)'};min-width:0">
+        ${obs?`Reviewed ${ageLabel}${days>=8?' — worth running again':''} · ${doneCount} of ${obs.length} addressed`:'Checks every open task for missing or contradictory data.'}
       </div>
-
-      ${!gdrive.clientId?`
-        <div onclick="setState({showSettings:true,showArchive:false});setTimeout(()=>{const el=document.getElementById('gdrive-setup');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},80)" style="display:flex;align-items:center;justify-content:space-between;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--teal-text);cursor:pointer">
-          <span>Connect Google Drive to keep your tasks synced across all your devices →</span>
-        </div>`:(gdrive.clientId&&!gdrive.token?`
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--amber-text)">
-          <span>Not connected to Google Drive — changes won't sync until reconnected.</span>
-          <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
-            <button onclick="window._gdriveConnect()" style="font-size:12px;padding:3px 10px;color:var(--amber-text);border-color:var(--amber-border);background:transparent">Connect</button>
-          </div>
-        </div>`:'')}
-
-
-      ${(()=>{return`
-        <div style="flex-shrink:0">
-          <div class="stats-row">
-          <div class="stat${state.filterState===null?' stat-active':''}" onclick="setState({filterState:null})" style="cursor:pointer">
-            <div class="stat-num">${domainFlat.filter(t=>!t.closed).length}</div>
-            <div class="stat-label">All tasks</div>
-          </div>
-          <div class="stat${state.filterState==='actionable'?' stat-active':''}" onclick="setState({filterState:state.filterState==='actionable'?null:'actionable'})" style="cursor:pointer">
-            <div class="stat-num" style="color:var(--teal-text)">${actionableCount}</div>
-            <div class="stat-label">Actionable</div>
-          </div>
-          <div class="stat${state.filterState==='waiting'?' stat-active':''}" onclick="setState({filterState:state.filterState==='waiting'?null:'waiting'})" style="cursor:pointer">
-            <div class="stat-num" style="color:var(--amber-text)">${waitingCount}</div>
-            <div class="stat-label">Waiting</div>
-          </div>
-          <div class="stat${state.filterState==='needs-definition'?' stat-active':''}" onclick="setState({filterState:state.filterState==='needs-definition'?null:'needs-definition'})" style="cursor:pointer">
-            <div class="stat-num" style="color:var(--red-text)">${notActionableCount}</div>
-            <div class="stat-label">Needs definition</div>
-          </div>
-          <div class="stat${state.filterState==='smart'?' stat-active':''}" onclick="window._toggleSmartFilter()" style="cursor:pointer;${state.filterState==='smart'?'border-color:var(--blue-border);background:var(--blue-bg)':''}">
-            <div class="stat-num" style="color:var(--blue-text)">★</div>
-            <div class="stat-label" style="${state.filterState==='smart'?'color:var(--blue-text)':''}">What now?</div>
-          </div>
-        </div>
-        ${state.filterState==='smart'?`
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 0 4px;flex-wrap:wrap">
-            <div style="display:flex;gap:4px">
-              <button onclick="setState({opDomain:'work',opResults:null,opDismissed:new Map()})" style="font-size:11px;padding:3px 10px;border-radius:99px;border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--border2)'};background:${state.opDomain==='work'?'var(--blue-bg)':'transparent'};color:${state.opDomain==='work'?'var(--blue-text)':'var(--text2)'}">Work</button>
-              <button onclick="setState({opDomain:'personal',opResults:null,opDismissed:new Map()})" style="font-size:11px;padding:3px 10px;border-radius:99px;border:0.5px solid ${state.opDomain==='personal'?'var(--teal-border)':'var(--border2)'};background:${state.opDomain==='personal'?'var(--teal-bg)':'transparent'};color:${state.opDomain==='personal'?'var(--teal-text)':'var(--text2)'}">Personal</button>
+      <button class="${obs?'':'primary'}" style="font-size:12px;padding:4px 12px;width:auto;flex-shrink:0"
+        onclick="${obs?`if(confirm('Replace this review with a new one? Anything unchecked will be lost.'))window._runReview()`:'window._runReview()'}">
+        ${state.reviewLoading?'Reviewing…':obs?'Run again':'Run review'}
+      </button>
+    </div>
+    <div class="task-tree" id="task-tree">
+      ${state.reviewLoading?`<div class="loading">Reviewing everything<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>`:''}
+      ${state.reviewError?`<div style="font-size:12px;color:var(--amber-text);margin-bottom:12px;line-height:1.6">⚠ ${escHtml(state.reviewError)}</div>`:''}
+      ${!state.reviewLoading&&!obs?`<div class="empty">Run a review to see what's holding Execute back.</div>`:''}
+      ${(obs||[]).map((o,i)=>`
+        <div style="border-left:2px solid ${o.done?'var(--border2)':(sev[o.severity]||'var(--border2)')};padding:6px 0 6px 12px;margin-bottom:14px;opacity:${o.done?'0.45':'1'}">
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <input type="checkbox" ${o.done?'checked':''} onchange="window._reviewToggle(${i})" style="margin-top:2px"/>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600;color:var(--text)">${o.kind?`<span style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3);margin-right:6px">${o.kind==='data'?'Data':'Priority'}</span>`:''}${escHtml(o.headline||'')}</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:3px">${escHtml(o.detail||'')}</div>
+              ${o.suggestion?`<div style="font-size:12px;color:var(--text3);margin-top:5px">→ ${escHtml(o.suggestion)}</div>`:''}
+              ${(o.taskTitles||[]).filter(tt=>flattenTasks(state.tasks).some(x=>x.title===tt)).map(tt=>`<button onclick="window._reviewOpenTask(&quot;${escHtml(tt).replace(/"/g,'&quot;')}&quot;)" style="font-size:11px;padding:2px 8px;margin:6px 4px 0 0;width:auto">${escHtml(tt)}</button>`).join('')}
             </div>
-            <select onchange="setState({opAvail:this.value,opResults:null,opDismissed:new Map()})" style="font-size:11px;padding:3px 8px">
-              <option value="">Any duration</option>
-              ${['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'].map(a=>`<option ${state.opAvail===a?'selected':''}>${a}</option>`).join('')}
-            </select>
-            <button class="primary" style="font-size:11px;padding:3px 10px" onclick="window._runOp()">
-              ${state.opLoading?'Scoring…':state.opResults?'Re-run →':'Show tasks →'}
-            </button>
-          </div>`:''}
-
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <div class="section-label" style="margin-bottom:0">${state.activeDomain} tasks — ranked by priority</div>
-            ${flattenTasks(domainTasks).some(t=>t.closed)?`<button class="ghost" style="font-size:11px;color:var(--text3)" onclick="setState({showClosedSubtasks:!state.showClosedSubtasks})">${state.showClosedSubtasks?'Hide closed':'Show closed'}</button>`:''}
-            ${domainTasks.some(t=>t.children?.length)?`
-              <button class="ghost" style="font-size:11px;color:var(--text3)" onclick="window._expandAllTop('${state.activeDomain}')" title="Expand all">⇲ All</button>
-              <button class="ghost" style="font-size:11px;color:var(--text3)" onclick="window._collapseAllTop('${state.activeDomain}')" title="Collapse all">⇱ All</button>
-            `:''}
           </div>
-          <button class="add-btn" onclick="setState({showModal:true,modalParentId:null})" style="margin-top:0;width:auto;padding:5px 12px;${state.activeDomain==='work'?'background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue-text)':'background:var(--teal-bg);border-color:var(--teal-border);color:var(--teal-text)'}">
-            <span style="font-size:16px;line-height:1">+</span> Add ${state.activeDomain} task
-          </button>
-        </div>
-        </div>
-        <div class="task-tree" id="task-tree">
-          ${(()=>{
-            if(state.opLoading&&state.filterState==='smart')return`<div class="loading">Scoring your tasks<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>`;
-            if(state.filterState==='smart'){
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderTabs(){
+  const tabs=[['collect','Collect','⊞'],['review','Review','☑'],['execute','Execute','▶']];
+  return `<nav class="tabbar">${tabs.map(([id,label,icon])=>
+    `<button class="tab${state.surface===id?' tab-on':''}" onclick="window._setSurface('${id}')">
+       <span class="tab-icon">${icon}</span><span class="tab-label">${label}</span>
+     </button>`).join('')}</nav>`;
+}
+
+function renderExecute(){
+  const avail=state.opAvail||'';
+  const setup=`
+    <div style="display:flex;align-items:center;gap:8px;padding:2px 0 12px;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--text2)">I have</span>
+      <select onchange="setState({opAvail:this.value,opResults:null,opDismissed:new Map()})" style="font-size:12px;padding:4px 8px;width:auto;flex:0 1 auto">
+        <option value="">Any duration</option>
+        ${['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'].map(a=>`<option ${avail===a?'selected':''}>${a}</option>`).join('')}
+      </select>
+      <button class="primary" style="font-size:12px;padding:4px 12px;width:auto;margin-left:auto" onclick="window._runOp()">
+        ${state.opLoading?'Scoring…':state.opResults?'Re-run':'What now?'}
+      </button>
+    </div>`;
+  const results=(()=>{
+    if(state.opLoading)return`<div class="loading">Scoring your tasks<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>`;
+    if(!state.opResults)return`<div class="empty">Pick how long you have, then tap What now?</div>`;
+
               if(!state.opResults)return`<div class="empty">Click "Show tasks →" to get your prioritized list.</div>`;
               const nowMs=Date.now();
           const visible=state.opResults.filter(r=>{
@@ -2335,8 +2326,8 @@ function render(){
                 const chosen=state.opChosen===i;
                 return`<div style="margin-bottom:6px">
                   ${ancestor&&ancestor.id!==task.id?`<div style="font-size:11px;color:var(--text3);margin-bottom:2px;padding-left:2px">↳ ${escHtml(ancestor.title)}</div>`:''}
-                  <div class="${chosen?'task-row op-chosen-'+state.opDomain:'task-row'}" onclick="setState({opChosen:${i}})"
-                    style="cursor:pointer${chosen?';border-color:'+(state.opDomain==='work'?'var(--blue-border)':'var(--teal-border)')+';background:'+(state.opDomain==='work'?'var(--blue-bg)':'var(--teal-bg)'):''}">
+                  <div class="${chosen?'task-row op-chosen-'+state.activeDomain:'task-row'}" onclick="setState({opChosen:${i}})"
+                    style="cursor:pointer${chosen?';border-color:'+(state.activeDomain==='work'?'var(--blue-border)':'var(--teal-border)')+';background:'+(state.activeDomain==='work'?'var(--blue-bg)':'var(--teal-bg)'):''}">
                     <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:1px">
                       <span style="font-size:12px;color:var(--text3);font-weight:400;width:24px;text-align:center">${getRankLabel(state.tasks,task.id)}</span>
                     </div>
@@ -2359,10 +2350,84 @@ function render(){
                       <button class="ghost" onclick="event.stopPropagation();window._opDone('${task.id}')" title="Mark done" style="font-size:13px;color:var(--teal-text)">✓</button>
                     </div>
                   </div>
-                  ${chosen?`<div style="margin-top:4px;padding:8px 12px;background:${state.opDomain==='work'?'var(--blue-bg)':'var(--teal-bg)'};border:0.5px solid ${state.opDomain==='work'?'var(--blue-border)':'var(--teal-border)'};border-radius:var(--radius);font-size:12px;color:${state.opDomain==='work'?'var(--blue-text)':'var(--teal-text)'}">Working on: <strong>${escHtml(task.title)}</strong></div>`:''}
+                  ${chosen?`<div style="margin-top:4px;padding:8px 12px;background:${state.activeDomain==='work'?'var(--blue-bg)':'var(--teal-bg)'};border:0.5px solid ${state.activeDomain==='work'?'var(--blue-border)':'var(--teal-border)'};border-radius:var(--radius);font-size:12px;color:${state.activeDomain==='work'?'var(--blue-text)':'var(--teal-text)'}">Working on: <strong>${escHtml(task.title)}</strong></div>`:''}
                 </div>`;
               }).join('');
-            }
+            
+  })();
+  return `<div style="flex-shrink:0">${setup}</div><div class="task-tree" id="task-tree">${results}</div>`;
+}
+
+function render(){
+  if(_pointerDown){_pendingRender=true;return;}
+  const flat=flattenTasks(state.tasks);
+
+  const domainFlat=flattenTasks(state.tasks.filter(t=>t.domain===state.activeDomain));
+  const actionableCount=domainFlat.filter(t=>t.state==='actionable'&&!t.closed).length;
+  const waitingCount=domainFlat.filter(t=>t.state==='waiting'&&!t.closed).length;
+  const notActionableCount=domainFlat.filter(t=>needsDefinition(t)).length;
+  const domainTasks=state.tasks.filter(t=>t.domain===state.activeDomain).sort((a,b)=>(a.rank||99)-(b.rank||99));
+
+  const html=`
+    <div class="app">
+      <div class="header">
+        <h1>Task system <span class="version-stamp">${APP_VERSION}</span></h1>
+        <div class="header-actions">
+          <button class="dom-pill${state.activeDomain==='work'?' on-work':''}" onclick="window._setContext('work')">Work</button>
+          <button class="dom-pill${state.activeDomain==='personal'?' on-personal':''}" onclick="window._setContext('personal')">Personal</button>
+          <button class="icon-btn" onclick="setState({showArchive:true,showSettings:false,archiveTask:null})" title="Archive">🗄</button>
+          <button class="icon-btn${state.showSettings?' active':''}" onclick="setState({showSettings:!state.showSettings,showArchive:false})" title="Settings">⚙</button>
+        </div>
+      </div>
+
+      ${!gdrive.clientId?`
+        <div onclick="setState({showSettings:true,showArchive:false});setTimeout(()=>{const el=document.getElementById('gdrive-setup');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},80)" style="display:flex;align-items:center;justify-content:space-between;background:var(--teal-bg);border:0.5px solid var(--teal-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--teal-text);cursor:pointer">
+          <span>Connect Google Drive to keep your tasks synced across all your devices →</span>
+        </div>`:(gdrive.clientId&&!gdrive.token?`
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--amber-text)">
+          <span>Not connected to Google Drive — changes won't sync until reconnected.</span>
+          <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
+            <button onclick="window._gdriveConnect()" style="font-size:12px;padding:3px 10px;color:var(--amber-text);border-color:var(--amber-border);background:transparent">Connect</button>
+          </div>
+        </div>`:'')}
+
+
+      ${state.surface==='execute'?renderExecute():state.surface==='review'?renderReviewSurface():(()=>{return`
+        <div style="flex-shrink:0">
+          <div class="stats-row">
+          <div class="stat${state.filterState===null?' stat-active':''}" onclick="setState({filterState:null})" style="cursor:pointer">
+            <div class="stat-num">${domainFlat.filter(t=>!t.closed).length}</div>
+            <div class="stat-label">All tasks</div>
+          </div>
+          <div class="stat${state.filterState==='actionable'?' stat-active':''}" onclick="setState({filterState:state.filterState==='actionable'?null:'actionable'})" style="cursor:pointer">
+            <div class="stat-num" style="color:var(--teal-text)">${actionableCount}</div>
+            <div class="stat-label">Actionable</div>
+          </div>
+          <div class="stat${state.filterState==='waiting'?' stat-active':''}" onclick="setState({filterState:state.filterState==='waiting'?null:'waiting'})" style="cursor:pointer">
+            <div class="stat-num" style="color:var(--amber-text)">${waitingCount}</div>
+            <div class="stat-label">Waiting</div>
+          </div>
+          <div class="stat${state.filterState==='needs-definition'?' stat-active':''}" onclick="setState({filterState:state.filterState==='needs-definition'?null:'needs-definition'})" style="cursor:pointer">
+            <div class="stat-num" style="color:var(--red-text)">${notActionableCount}</div>
+            <div class="stat-label">Needs definition</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="section-label" style="margin-bottom:0">${state.activeDomain} tasks — ranked by priority</div>
+            ${flattenTasks(domainTasks).some(t=>t.closed)?`<button class="ghost" style="font-size:11px;color:var(--text3)" onclick="setState({showClosedSubtasks:!state.showClosedSubtasks})">${state.showClosedSubtasks?'Hide closed':'Show closed'}</button>`:''}
+            ${domainTasks.some(t=>t.children?.length)?`
+              <button class="ghost" style="font-size:11px;color:var(--text3)" onclick="window._expandAllTop('${state.activeDomain}')" title="Expand all">⇲ All</button>
+              <button class="ghost" style="font-size:11px;color:var(--text3)" onclick="window._collapseAllTop('${state.activeDomain}')" title="Collapse all">⇱ All</button>
+            `:''}
+          </div>
+          <button class="add-btn" onclick="setState({showModal:true,modalParentId:null})" style="margin-top:0;width:auto;padding:5px 12px;${state.activeDomain==='work'?'background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue-text)':'background:var(--teal-bg);border-color:var(--teal-border);color:var(--teal-text)'}">
+            <span style="font-size:16px;line-height:1">+</span> Add ${state.activeDomain} task
+          </button>
+        </div>
+        </div>
+        <div class="task-tree" id="task-tree">
+          ${(()=>{
             if(domainTasks.length===0)return`<div class="empty">No ${state.activeDomain} tasks yet.<br>Click the button above to get started.</div>`;
             const anyMatch=!state.filterState||domainTasks.some(t=>treeHasMatch(t,state.filterState));
             if(!anyMatch)return`<div class="empty">No ${state.activeDomain} tasks match this filter.</div>`;
@@ -2371,9 +2436,8 @@ function render(){
         </div>
 
 `})()}
+      ${renderTabs()}
     </div>
-
-    ${state.showReview?renderReview():''}
 
     ${state.showModal?`
       <div class="overlay" onclick="if(event.target===this)setState({showModal:false,modalParentId:null})">
@@ -2684,11 +2748,9 @@ window._switchToOp=function(){
   window._toggleSmartFilter(true);
 };
 window._toggleSmartFilter=function(forceOn){
-  const turning0n=forceOn||state.filterState!=='smart';
-  if(!turning0n){setState({filterState:null});return;}
-  // Set domain from schedule, keep avail default
-  const domain=getContextDomain();
-  state={...state,filterState:'smart',opDomain:domain,
+  // Legacy shim — Execute is a surface now, not a filter
+  const domain=state.activeDomain;
+  state={...state,surface:'execute',filterState:null,opDomain:domain,
     opAvail:state.opAvail||state.settings.defaultAvail,
     opResults:null,opChosen:null,opLoading:false,opDismissed:new Map()};
   render();
