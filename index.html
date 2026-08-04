@@ -181,8 +181,9 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
 
   /* Dialogs become bottom sheets — closer to the thumb, clear of the keyboard */
   .overlay{align-items:flex-end;padding:0}
+  #settings-panel{height:auto;max-height:none;flex:1;min-height:0}
   .modal{max-width:none;border-radius:var(--radius-lg) var(--radius-lg) 0 0;
-    max-height:88dvh;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+    height:88dvh;display:flex;flex-direction:column;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
     animation:sheet-up 0.18s ease-out}
   @keyframes sheet-up{from{transform:translateY(12px);opacity:0.6}to{transform:none;opacity:1}}
 }
@@ -298,7 +299,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.23.0-alpha · Aug 2, 2026';
+const APP_VERSION='v0.24.0-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -411,6 +412,7 @@ async function gdriveAuth(){
           const token=p.get('access_token');
           const expiresIn=parseInt(p.get('expires_in')||'3600',10);
           gdrive.token=token;
+          setTimeout(gdriveFlushPending,0);
           gdrive.status='connected';
           // Schedule token expiry
           setTimeout(()=>{gdrive.token=null;gdrive.status='disconnected';gdriveRender();},expiresIn*1000);
@@ -494,15 +496,33 @@ async function gdriveWrite(data){
   }
 }
 
-// Debounced Drive write — batches rapid changes into one write
+// Debounced Drive write — batches rapid changes into one write.
+// The token is memory-only, so it is null after every reload and after expiry.
+// Writes that land in those windows must be remembered, not dropped.
 let _driveWriteTimer=null;
+let _driveDirty=false;
+function gdrivePayload(){
+  const{clientId,...syncableSettings}=state.settings;
+  return{tasks:state.tasks,archive:state.archive,settings:syncableSettings,tombstones:loadTombstones()};
+}
 function gdriveScheduleWrite(){
-  if(!gdrive.token)return;
+  if(!gdrive.clientId)return;              // Drive never configured — nothing to sync
+  if(!gdrive.token){                       // configured but not authorised right now
+    _driveDirty=true;
+    gdriveRender();
+    return;
+  }
   clearTimeout(_driveWriteTimer);
   _driveWriteTimer=setTimeout(()=>{
-    const{clientId,...syncableSettings}=state.settings;
-    gdriveWrite({tasks:state.tasks,archive:state.archive,settings:syncableSettings,tombstones:loadTombstones()});
+    _driveDirty=false;
+    gdriveWrite(gdrivePayload());
   },2000);
+}
+// Flush anything that accumulated while the token was missing
+function gdriveFlushPending(){
+  if(!gdrive.token||!_driveDirty)return;
+  _driveDirty=false;
+  gdriveWrite(gdrivePayload());
 }
 
 // Deep merge two task trees by id, keeping newer updatedAt per task
@@ -1824,12 +1844,6 @@ function renderSettings(){
   }).join('');
 
   return`<div style="max-width:480px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-size:15px;font-weight:500">Settings</div>
-      <button onclick="setState({showSettings:false,showArchive:true,archiveTask:null})" style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px">
-        🗃 Archive${state.archive.length>0?` (${state.archive.length})`:''} →
-      </button>
-    </div>
 
     <div class="set-card ${(state.settingsSection||'prefs')==='prefs'?'sec-on':''}" data-sec="prefs" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Work schedule</div>
@@ -2416,7 +2430,7 @@ function render(){
           <span>Connect Google Drive to keep your tasks synced across all your devices →</span>
         </div>`:(gdrive.clientId&&!gdrive.token?`
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--amber-text)">
-          <span>Not connected to Google Drive — changes won't sync until reconnected.</span>
+          <span>Not connected to Google Drive — ${_driveDirty?'you have unsaved changes on this device.':"changes won't sync until reconnected."}</span>
           <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
             <button onclick="window._gdriveConnect()" style="font-size:12px;padding:3px 10px;color:var(--amber-text);border-color:var(--amber-border);background:transparent">Connect</button>
           </div>
@@ -2523,7 +2537,7 @@ function render(){
             <button class="ghost" onclick="setState({showSettings:false})" style="font-size:16px;padding:2px 8px">×</button>
           </div>
           ${renderSettingsNav()}
-          <div id="settings-panel" style="max-height:70vh;overflow-y:auto">
+          <div id="settings-panel" style="height:62vh;overflow-y:auto">
             ${renderSettings()}
           </div>
         </div>
@@ -3175,9 +3189,15 @@ window._gdriveSync=async function(){
     saveTombstones(mergedTombstones);
     const mergedTasks=mergeTaskTrees(state.tasks,data.tasks,mergedTombstones);
     const mergedArchive=mergeArchives(state.archive,data.archive||[]);
+    // Settings had no merge rule — remote won unconditionally, silently
+    // reverting anything changed while offline. Compare stamps instead.
     let mergedSettings=state.settings;
     if(data.settings){
-      mergedSettings={...DEFAULT_SETTINGS,...data.settings,clientId:state.settings.clientId};
+      const localAt=state.settings.settingsUpdatedAt||'';
+      const remoteAt=data.settings.settingsUpdatedAt||'';
+      if(remoteAt>localAt){
+        mergedSettings={...DEFAULT_SETTINGS,...data.settings,clientId:state.settings.clientId};
+      }
     }
     saveTasks(mergedTasks);saveArchive(mergedArchive);saveSettings(mergedSettings);
     state.tasks=mergedTasks;state.archive=mergedArchive;
@@ -3190,17 +3210,16 @@ window._gdriveSync=async function(){
 };
 
 window._saveSetting=function(key,val){
-  const settings={...state.settings,[key]:val};
+  const settings={...state.settings,[key]:val,settingsUpdatedAt:new Date().toISOString()};
   saveSettings(settings);
   setState({settings});
   // Schedule Drive write for settings change (exclude clientId)
   if(gdrive.token){
     clearTimeout(_driveWriteTimer);
     _driveWriteTimer=setTimeout(()=>{
-      const{clientId,...syncableSettings}=state.settings;
-      gdriveWrite({tasks:state.tasks,archive:state.archive,settings:syncableSettings,tombstones:loadTombstones()});
+      gdriveWrite(gdrivePayload());
     },2000);
-  }
+  } else if(gdrive.clientId){ _driveDirty=true; gdriveRender(); }
 };
 // Debounced version for sliders — updates state only after dragging stops
 const _saveSettingDebounceTimers={};
