@@ -107,7 +107,7 @@ textarea{resize:vertical;min-height:64px}
 .form-row{margin-bottom:11px}
 .form-inline{display:flex;gap:8px;margin-bottom:11px}
 .form-inline>*{flex:1;min-width:0}
-.btn-row{display:flex;gap:6px;justify-content:flex-end;margin-top:14px}
+.btn-row{align-items:center;display:flex;gap:6px;justify-content:flex-end;margin-top:14px}
 .dedup{background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--amber-text);line-height:1.65}
 /* Operation mode */
 .op-setup{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:18px;max-width:360px;margin:8px auto 0}
@@ -299,7 +299,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.24.1-alpha · Aug 2, 2026';
+const APP_VERSION='v0.25.0-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -1576,6 +1576,7 @@ ${(()=>{
       
       <div id="f-due-warn" style="display:none;font-size:11px;color:var(--amber-text);margin-bottom:8px;line-height:1.5"></div>
       <div class="btn-row">
+        ${isEdit?`<button onclick="window._addSubtaskFromEdit('${initial.id}')" style="margin-right:auto;width:auto">+ Subtask</button>`:''}
         <button onclick="window._formCancel()">Cancel</button>
         <button class="primary" onclick="window._formSave()">${isEdit?'Save changes':'Add task'}</button>
       </div>
@@ -1660,7 +1661,6 @@ function renderTaskNode(task,isTop,expanded,dimmed){
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:1px">
         <span class="drag-handle" onpointerdown="event.stopPropagation();window._dragPointerDown(event,'${task.id}')" title="Drag to reorder">⠿</span>
         <button class="expand-btn" onclick="event.stopPropagation();window._toggleExpand('${task.id}')">${hasChildren?(expanded?'▾':'▸'):'·'}</button>
-        ${hasChildren?`<button class="expand-btn" onclick="event.stopPropagation();${expanded?`window._collapseAll('${task.id}')`:`window._expandAll('${task.id}')`}" title="${expanded?'Collapse all':'Expand all'}" style="font-size:8px;opacity:0.5;height:12px">${expanded?'⇱':'⇲'}</button>`:''}
       </div>
       <div class="task-main">
         <div class="task-title" style="${task.closed?'text-decoration:line-through;opacity:0.5;':''}">
@@ -1674,7 +1674,8 @@ function renderTaskNode(task,isTop,expanded,dimmed){
           ${task.state==='waiting'&&task.waitingWho&&!task.closed?`<span class="badge b-waiting">↻ ${escHtml(task.waitingWho)}</span>`:''}
           ${overdue?`<span class="badge b-overdue">Overdue — follow up</span>`:''}
         </div>
-        ${task.notes?`<div class="task-notes">${escHtml(task.notes.slice(0,120))}${task.notes.length>120?'…':''}</div>`:''}
+        ${(()=>{const n=(task.notesSummary&&task.notesHash===noteHash(normNote(task)))?task.notesSummary:(task.notes||'');
+          return n?`<div class="task-notes">${escHtml(n.slice(0,120))}${n.length>120?'…':''}</div>`:'';})()}
         ${state.closeBlockedId===task.id?`<div style="font-size:11px;color:var(--amber-text);margin-top:4px;line-height:1.5">Close all open subtasks (${state.closeBlockedCount}) before closing this task.</div>`:''}
         ${task.state==='blocked'&&task.blockedBy?(()=>{
           const blocker=findTask(state.tasks,task.blockedBy);
@@ -1686,15 +1687,12 @@ function renderTaskNode(task,isTop,expanded,dimmed){
         })():''}
       </div>
       <div class="task-actions" onclick="event.stopPropagation()">
-        <div class="rank-arrows"><button class="rank-arrow" onclick="window._rerank('${task.id}','up')">▲</button><button class="rank-arrow" onclick="window._rerank('${task.id}','down')">▼</button></div>
         ${isTop
           ?`<button class="ghost" onclick="window._closeTop('${task.id}')" title="Close task" style="font-size:13px;color:var(--teal-text)">✓</button>`
           :(task.closed
             ?`<button class="ghost" onclick="window._toggleSubClosed('${task.id}')" title="Re-open" style="font-size:11px;color:var(--text3)">↩</button>`
             :`<button class="ghost" onclick="window._toggleSubClosed('${task.id}')" title="Mark done" style="font-size:13px;color:var(--teal-text)">✓</button>`)
         }
-        <button class="ghost" onclick="window._addChild('${task.id}')" title="Add subtask" style="font-size:15px;line-height:1">+</button>
-        <button class="ghost" onclick="window._moveTask('${task.id}')" title="Move under…" style="font-size:12px">↕</button>
         ${state.confirmDeleteId===task.id
           ?`<span style="display:inline-flex;align-items:center;gap:3px">
               <button class="ghost danger-btn" onclick="window._deleteTask('${task.id}')" style="font-size:11px;padding:2px 6px">Yes, delete</button>
@@ -2387,7 +2385,8 @@ function renderExecute(){
                       </div>
                       ${r.why?`<div style="font-size:11px;color:var(--text2);font-style:italic;margin-top:3px">${escHtml(r.why)}</div>`:''}
                       ${task.state==='waiting'&&task.waitingWho?`<div style="font-size:12px;color:var(--amber-text);margin-top:4px">↻ Waiting on ${escHtml(task.waitingWho)}</div>`:''}
-                      ${task.notes?`<div class="task-notes">${escHtml(task.notes.slice(0,120))}${task.notes.length>120?'…':''}</div>`:''}
+                      ${(()=>{const n=(task.notesSummary&&task.notesHash===noteHash(normNote(task)))?task.notesSummary:(task.notes||'');
+          return n?`<div class="task-notes">${escHtml(n.slice(0,120))}${n.length>120?'…':''}</div>`:'';})()}
                     </div>
                     <div class="task-actions" onclick="event.stopPropagation()">
                       <button class="ghost" onclick="window._editTask('${task.id}')" title="Edit">✎</button>
@@ -2840,6 +2839,12 @@ window._toggleArchiveExpand=function(id){
 };
 window._rerank=function(id,dir){rerankFn(id,dir);};
 window._addChild=function(pid){expandedSet.add(pid);setState({showModal:true,modalParentId:pid});};
+// From the edit sheet: commit any pending edits, then open a fresh child form
+window._addSubtaskFromEdit=function(pid){
+  window._formSave();
+  expandedSet.add(pid);
+  setState({editTask:null,showModal:true,modalParentId:pid});
+};
 window._editTask=function(id){
   const t=findTask(state.tasks,id);
   if(t)setState({editTask:t});
