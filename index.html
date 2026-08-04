@@ -299,7 +299,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.24.0-alpha · Aug 2, 2026';
+const APP_VERSION='v0.24.1-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -3224,11 +3224,17 @@ window._saveSetting=function(key,val){
 // Debounced version for sliders — updates state only after dragging stops
 const _saveSettingDebounceTimers={};
 window._saveSettingDebounced=function(key,val,delayMs){
-  state.settings={...state.settings,[key]:val};
+  // Must stamp and queue exactly like _saveSetting — sliders were doing neither,
+  // so remote settings always looked newer and overwrote them on sync.
+  state.settings={...state.settings,[key]:val,settingsUpdatedAt:new Date().toISOString()};
   saveSettings(state.settings);
   clearTimeout(_saveSettingDebounceTimers[key]);
   _saveSettingDebounceTimers[key]=setTimeout(()=>{
     setState({settings:state.settings});
+    if(gdrive.token){
+      clearTimeout(_driveWriteTimer);
+      _driveWriteTimer=setTimeout(()=>{_driveDirty=false;gdriveWrite(gdrivePayload());},2000);
+    } else if(gdrive.clientId){ _driveDirty=true; gdriveRender(); }
   },delayMs||300);
 };
 window._toggleWorkDay=function(day){
