@@ -132,6 +132,8 @@ textarea{resize:vertical;min-height:64px}
 .op-results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .waiting-extra{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:8px}
 body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
+.set-card{display:none}
+.set-card.sec-on{display:block}
 .view-btn{width:auto;font-size:12px;padding:4px 10px;border-radius:var(--radius);border:0.5px solid var(--border);background:transparent;color:var(--text2);white-space:nowrap}
 .chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .chip{width:auto;font-size:12px;padding:4px 11px;border-radius:99px;border:0.5px solid var(--border);background:var(--bg2);color:var(--text2);white-space:nowrap}
@@ -296,7 +298,7 @@ function availToMins(a){
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
-const APP_VERSION='v0.22.2-alpha · Aug 2, 2026';
+const APP_VERSION='v0.23.0-alpha · Aug 2, 2026';
 const STORAGE_KEY='taskSystem_v1';
 const ARCHIVE_KEY='taskSystem_archive_v1';
 const SETTINGS_KEY='taskSystem_settings_v1';
@@ -1062,7 +1064,7 @@ let state={
   confirmDeleteId:null,
   filterState:null,
   surface:'collect',
-  showViewMenu:false,
+  settingsSection:'prefs',
   opDismissed:new Map(), // taskId -> expiry timestamp (ms)
   opDomain:'work',
   opAvail:'',
@@ -1584,7 +1586,6 @@ function anyExpandedIn(domain){
 }
 window._toggleExpandAll=function(){
   const d=state.activeDomain;
-  state.showViewMenu=false;
   if(anyExpandedIn(d))window._collapseAllTop(d); else window._expandAllTop(d);
 };
 window._setSurface=function(sf){
@@ -1804,6 +1805,14 @@ function getContextDomain(){
   }
 }
 
+const SETTINGS_SECTIONS=[['prefs','Preferences'],['execute','Execute'],['ai','AI'],['data','Data']];
+function renderSettingsNav(){
+  const cur=state.settingsSection||'prefs';
+  return `<div class="chip-row" style="margin-bottom:14px">${SETTINGS_SECTIONS.map(([id,label])=>
+    `<button class="chip${cur===id?' chip-on':''}" onclick="setState({settingsSection:'${id}'})"
+      style="${cur===id?'background:var(--bg3);color:var(--text);border-color:var(--border2)':''}">${label}</button>`).join('')}</div>`;
+}
+
 function renderSettings(){
   const s=state.settings;
   const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -1822,7 +1831,7 @@ function renderSettings(){
       </button>
     </div>
 
-    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
+    <div class="set-card ${(state.settingsSection||'prefs')==='prefs'?'sec-on':''}" data-sec="prefs" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Work schedule</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Work timezone</div>
       <select onchange="window._saveSetting('workTimezone',this.value)" style="font-size:13px;margin-bottom:14px">
@@ -1874,8 +1883,8 @@ function renderSettings(){
       </div>
     </div>
 
-    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">What now? defaults</div>
+    <div class="set-card ${(state.settingsSection||'prefs')==='execute'?'sec-on':''}" data-sec="execute" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Execute defaults</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Default time available</div>
       <select onchange="window._saveSetting('defaultAvail',this.value)" style="font-size:13px;margin-bottom:14px">
         ${['5 min','10 min','15 min','30 min','1 hr','2 hr','3 hr','4+ hr'].map(a=>`<option ${s.defaultAvail===a?'selected':''}>${a}</option>`).join('')}
@@ -1890,8 +1899,8 @@ function renderSettings(){
       </select>
     </div>
 
-    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">What now? ranking personalization</div>
+    <div class="set-card ${(state.settingsSection||'prefs')==='execute'?'sec-on':''}" data-sec="execute" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Execute ranking</div>
       <div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:14px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius)">
         Each factor scores 0–40 pts, then multiplied by its weight (1–100, default 50).<br>
         <strong>Rank</strong> — relative priority within your domain. Higher rank = more points.<br>
@@ -1932,7 +1941,7 @@ function renderSettings(){
         </div>`).join('')}
     </div>
 
-    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
+    <div class="set-card ${(state.settingsSection||'prefs')==='execute'?'sec-on':''}" data-sec="execute" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Cross-domain tasks</div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -2004,8 +2013,8 @@ function renderSettings(){
       </div>
     </div>
 
-    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px">
-      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Organize view</div>
+    <div class="set-card ${(state.settingsSection||'prefs')==='prefs'?'sec-on':''}" data-sec="prefs" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">Collect view</div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div>
           <div style="font-size:13px">Show closed subtasks by default</div>
@@ -2023,7 +2032,7 @@ function renderSettings(){
       </div>
     </div>
 
-    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
+    <div class="set-card ${(state.settingsSection||'prefs')==='data'?'sec-on':''}" data-sec="data" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
       <div id="gdrive-setup" style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Google Drive sync</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Your task data is stored in a private app folder in your Google Drive, invisible to other apps.</div>
       <div id="gdrive-status-block">
@@ -2067,7 +2076,7 @@ function renderSettings(){
         6. Copy the Client ID and paste above
       </div>
     </div>
-    <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
+    <div class="set-card ${(state.settingsSection||'prefs')==='data'?'sec-on':''}" data-sec="data" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
       <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Backup &amp; restore</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:10px">One JSON file with every task, your archive, and your settings. Keep a copy somewhere that isn't this device.</div>
       ${(()=>{
@@ -2086,7 +2095,11 @@ function renderSettings(){
         <div style="font-size:11px;color:var(--text3);min-width:0">Version ${APP_VERSION}</div>
         <button onclick="window._checkUpdate()" style="font-size:12px;width:auto;flex-shrink:0;padding:5px 10px">Check for updates</button>
       </div>
-      <div style="border-top:0.5px solid var(--border);margin-top:12px;padding-top:12px">
+      </div>
+
+    <div class="set-card ${(state.settingsSection||'prefs')==='ai'?'sec-on':''}" data-sec="ai" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">AI &amp; summaries</div>
+      <div>
         <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:4px">Backfill summaries</div>
         ${(()=>{
           const need=flattenTasks(state.tasks).filter(t=>summaryNeeded(t)&&!t.summaryFailed).length;
@@ -2259,10 +2272,7 @@ function renderReview(){
 // work (Drive sync on window focus, the work-hours watcher) can re-render mid-click and
 // silently swallow it. Defer any render that arrives while a pointer is down.
 let _pointerDown=false,_pendingRender=false;
-document.addEventListener('pointerdown',e=>{
-  _pointerDown=true;
-  if(state.showViewMenu&&!(e.target.closest&&e.target.closest('.view-menu-anchor')))state.showViewMenu=false;
-},true);
+document.addEventListener('pointerdown',()=>{_pointerDown=true;},true);
 function _pointerReleased(){
   if(!_pointerDown)return;
   _pointerDown=false;
@@ -2512,6 +2522,7 @@ function render(){
             <h2 style="margin-bottom:0">Settings</h2>
             <button class="ghost" onclick="setState({showSettings:false})" style="font-size:16px;padding:2px 8px">×</button>
           </div>
+          ${renderSettingsNav()}
           <div id="settings-panel" style="max-height:70vh;overflow-y:auto">
             ${renderSettings()}
           </div>
